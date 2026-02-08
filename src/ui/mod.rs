@@ -228,12 +228,10 @@ pub enum Action {
     Render,
     Quit,
     AppEvent(crossterm::event::Event),
-    NewPage(Page<Issue>),
+    NewPage(Box<Page<Issue>>),
     ChangeLabels(Vec<Label>),
 }
 
 pub mod components;
-pub mod focus;
-pub mod keystrokes;
 pub mod layout;
 pub mod theme;

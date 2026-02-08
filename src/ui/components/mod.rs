@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rat_widget::focus::HasFocus;
-use ratatui::{buffer::Buffer, layout::Rect};
+use ratatui::buffer::Buffer;
 
 use crate::ui::{Action, layout::Layout};
 

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use octocrab::{
     Page,
@@ -60,7 +58,7 @@ impl<'a> IssueList<'a> {
                 .send()
                 .await
                 .unwrap();
-            tx.send(Action::NewPage(p)).await.unwrap();
+            tx.send(Action::NewPage(Box::new(p))).await.unwrap();
         });
         Self {
             page: None,
@@ -190,7 +188,7 @@ impl Component for IssueList<'_> {
                                 if let Ok(pres) = p
                                     && let Some(p) = pres
                                 {
-                                    tx.send(crate::ui::Action::NewPage(p)).await?;
+                                    tx.send(crate::ui::Action::NewPage(Box::new(p))).await?;
                                 }
                                 Ok::<(), AppError>(())
                             });
@@ -211,7 +209,7 @@ impl Component for IssueList<'_> {
                     .map(IssueListItem::from);
                 let prev_issues = std::mem::take(&mut self.issues);
                 self.issues = prev_issues.into_iter().chain(issues).collect();
-                self.page = Some(p);
+                self.page = Some(*p);
                 self.state = State::Loaded;
             }
             _ => {}
