@@ -1,0 +1,143 @@
+2026-02-09T10:54:13.228482Z TRACE tower::buffer::service: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/service.rs:111: sending request to buffer worker
+2026-02-09T10:54:13.229346Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:80: worker polling for next message
+2026-02-09T10:54:13.229363Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:96: processing new request
+2026-02-09T10:54:13.229370Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:163: resumed=false worker received request; waiting for service readiness
+2026-02-09T10:54:13.229378Z DEBUG tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:169: service.ready=true processing request
+2026-02-09T10:54:13.230203Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: octocrab: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/octocrab-0.49.5/src/lib.rs:778: requesting
+2026-02-09T10:54:13.230235Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:176: returning response future
+2026-02-09T10:54:13.230245Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:80: worker polling for next message
+2026-02-09T10:54:13.230672Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::pool: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/pool.rs:686: checkout waiting for idle connection: ("https", api.github.com)
+2026-02-09T10:54:13.230861Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::connect::http: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/connect/http.rs:481: Http::connect; scheme=Some("https"), host=Some("api.github.com"), port=None
+2026-02-09T10:54:13.269678Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::connect::http: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/connect/http.rs:767: connecting to 20.207.73.85:443
+2026-02-09T10:54:13.270197Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: mio::poll: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mio-1.1.1/src/poll.rs:573: registering event source with poller: token=Token(35081341056), interests=READABLE | WRITABLE
+2026-02-09T10:54:13.308735Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::connect::http: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/connect/http.rs:770: connected to 20.207.73.85:443
+2026-02-09T10:54:13.309479Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::hs: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/hs.rs:1124: No cached session for DnsName("api.github.com")
+2026-02-09T10:54:13.309499Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::hs: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/hs.rs:105: Not resuming any session
+2026-02-09T10:54:13.312593Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::hs: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/hs.rs:469: Sending ClientHello Message {
+    version: TLSv1_0,
+    payload: Handshake {
+        parsed: HandshakeMessagePayload(
+            ClientHello(
+                ClientHelloPayload {
+                    client_version: TLSv1_2,
+                    random: d2b5c3576442174faca950def7bed709e21c9098b3a73eb6d05c00a2aac7c9ba,
+                    session_id: b305eea101a7236bbbfbd93aef94225c397fc8de37e912ddc4402481c650c2a2,
+                    cipher_suites: [
+                        TLS13_AES_256_GCM_SHA384,
+                        TLS13_AES_128_GCM_SHA256,
+                        TLS13_CHACHA20_POLY1305_SHA256,
+                        TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+                        TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+                        TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+                        TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+                        TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+                        TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+                        TLS_EMPTY_RENEGOTIATION_INFO_SCSV,
+                    ],
+                    compression_methods: [
+                        Null,
+                    ],
+                    extensions: ClientExtensions {
+                        server_name: SingleDnsName(
+                            DnsName(
+                                "api.github.com",
+                            ),
+                        ),
+                        certificate_status_request: Ocsp(
+                            OcspCertificateStatusRequest {
+                                responder_ids: [],
+                                extensions: ,
+                            },
+                        ),
+                        named_groups: [
+                            X25519,
+                            secp256r1,
+                            secp384r1,
+                        ],
+                        ec_point_formats: SupportedEcPointFormats {
+                            uncompressed: true,
+                        },
+                        signature_schemes: [
+                            ECDSA_NISTP384_SHA384,
+                            ECDSA_NISTP256_SHA256,
+                            ED25519,
+                            RSA_PSS_SHA512,
+                            RSA_PSS_SHA384,
+                            RSA_PSS_SHA256,
+                            RSA_PKCS1_SHA512,
+                            RSA_PKCS1_SHA384,
+                            RSA_PKCS1_SHA256,
+                        ],
+                        extended_master_secret_request: (),
+                        session_ticket: Request,
+                        supported_versions: SupportedProtocolVersions {
+                            tls13: true,
+                            tls12: true,
+                        },
+                        preshared_key_modes: PskKeyExchangeModes {
+                            psk_dhe: true,
+                            psk: false,
+                        },
+                        key_shares: [
+                            KeyShareEntry {
+                                group: X25519,
+                                payload: 97bc0acf8b8143096f5b3958de2d31fd1956f8c6617bd3a24d1da535ad04582a,
+                            },
+                        ],
+                        order_seed: 1762,
+                        contiguous_extensions: [],
+                        ..
+                    },
+                },
+            ),
+        ),
+        encoded: 010000e80303d2b5c3576442174faca950def7bed709e21c9098b3a73eb6d05c00a2aac7c9ba20b305eea101a7236bbbfbd93aef94225c397fc8de37e912ddc4402481c650c2a20014130213011303c02cc02bcca9c030c02fcca800ff0100008b002b0005040304030300000013001100000e6170692e6769746875622e636f6d000d00140012050304030807080608050804060105010401003300260024001d002097bc0acf8b8143096f5b3958de2d31fd1956f8c6617bd3a24d1da535ad04582a002d0002010100170000000b0002010000230000000500050100000000000a00080006001d00170018,
+    },
+}
+2026-02-09T10:54:13.351355Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::hs: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/hs.rs:669: We got ServerHello ServerHelloPayload {
+    legacy_version: TLSv1_2,
+    random: bfe9fbf72498ca1fddc104d0af1905a3bdf4ddb1e5d0c29ce6d61d43eda5d6ec,
+    session_id: b305eea101a7236bbbfbd93aef94225c397fc8de37e912ddc4402481c650c2a2,
+    cipher_suite: TLS13_AES_128_GCM_SHA256,
+    compression_method: Null,
+    extensions: ServerExtensions {
+        key_share: KeyShareEntry {
+            group: X25519,
+            payload: ef120c133dcaf58f477e81fbb0aec83174e5ee1320a9f49bed03aa983b6eaa3f,
+        },
+        selected_version: TLSv1_3,
+        unknown_extensions: {},
+        ..
+    },
+}
+2026-02-09T10:54:13.351404Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::hs: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/hs.rs:788: Using ciphersuite TLS13_AES_128_GCM_SHA256
+2026-02-09T10:54:13.352725Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::tls13: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/tls13.rs:162: Not resuming
+2026-02-09T10:54:13.352739Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::client_conn: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/client_conn.rs:596: EarlyData rejected
+2026-02-09T10:54:13.353933Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::conn: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/conn.rs:1165: Dropping CCS
+2026-02-09T10:54:13.353960Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::tls13: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/tls13.rs:499: TLS1.3 encrypted extensions: ServerExtensions { server_name_ack: (), unknown_extensions: {}, .. }
+2026-02-09T10:54:13.353977Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::hs: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/hs.rs:618: ALPN protocol is None
+2026-02-09T10:54:13.354017Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: rustls::client::tls13: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.36/src/client/tls13.rs:1158: Server cert is CertificateChain([CertificateDer(0x308203ee30820394a003020102021100b86c4d68cde873f9915ab6355da28e33300a06082a8648ce3d0403023060310b300906035504061302474231183016060355040a130f5365637469676f204c696d69746564313730350603550403132e5365637469676f205075626c6963205365727665722041757468656e7469636174696f6e20434120445620453336301e170d3236303130363030303030305a170d3236303430353233353935395a30173115301306035504030c0c2a2e6769746875622e636f6d3059301306072a8648ce3d020106082a8648ce3d03010703420004667a7ddca383f9494788cf2e5b02ef56b122275681e11da8060f60736dc605752926e6ed6b2d9e9c056ba5c18fbe64352761908fb218269b16f663f11323619ea382027630820272301f0603551d230418301680141799a804c16fe42d70a80a103d03d3e91ab82663301d0603551d0e0416041491796870980520364e0a29c4f85995df7662d1ea300e0603551d0f0101ff040403020780300c0603551d130101ff0402300030130603551d25040c300a06082b0601050507030130490603551d20044230403034060b2b06010401b231010202073025302306082b06010505070201161768747470733a2f2f7365637469676f2e636f6d2f4350533008060667810c01020130818406082b0601050507010104783076304f06082b060105050730028643687474703a2f2f6372742e7365637469676f2e636f6d2f5365637469676f5075626c696353657276657241757468656e7469636174696f6e434144564533362e637274302306082b060105050730018617687474703a2f2f6f6373702e7365637469676f2e636f6d30820104060a2b06010401d6790204020481f50481f200f00076000e5794bcf3aea93e331b2c9907b3f790df9bc23d713225dd21a925ac61c54e210000019b909d025f0000040300473045022027753421b9f26fcde9ccb5a60711cb5d3965a9f3d026674ea36cc9fcd31742b8022100dcc732f2a5a2d154cd7bec1129115b2f53d99a3234c22be6d159e39225083db9007600d16ea9a568077e6635a03f37a5ddbc03a53c411214d48818f5e931b323cb95040000019b909d033300000403004730450220353227441dd34d4af6c0d8140a6ef4a945efbcb80eebcb53d0f537df9b0d64a0022100e9fee99fca152e8e956551620b1e0e45f433140ef50e94e434342b9042ae778b30230603551d11041c301a820c2a2e6769746875622e636f6d820a6769746875622e636f6d300a06082a8648ce3d0403020348003045022100be48df64ffb959312d43c2d905c90584265d3a2ea94719c9fc3023e868326717022065f34dd0ea79c88359eb3dcc0e5f67421b6c85bbf8032123d035235da0dca448), CertificateDer(0x3082035f308202e6a003020102021036e059ed888dd57aedd570b6727f9bda300a06082a8648ce3d040303305f310b300906035504061302474231183016060355040a130f5365637469676f204c696d69746564313630340603550403132d5365637469676f205075626c6963205365727665722041757468656e7469636174696f6e20526f6f7420453436301e170d3231303332323030303030305a170d3336303332313233353935395a3060310b300906035504061302474231183016060355040a130f5365637469676f204c696d69746564313730350603550403132e5365637469676f205075626c6963205365727665722041757468656e7469636174696f6e204341204456204533363059301306072a8648ce3d020106082a8648ce3d0301070342000468a1a76c05270589631c39a7ff2521c5edd32f1298bb2cdcf555e849a08457917bdc585f6bf4a2fd132c9b04c55b747db3b27a269619166bb8768def93f56097a38201813082017d301f0603551d23041830168014d122da4c59f14b5f2638aa9dd6eeeb0dc3fba961301d0603551d0e041604141799a804c16fe42d70a80a103d03d3e91ab82663300e0603551d0f0101ff04040302018630120603551d130101ff040830060101ff020100301d0603551d250416301406082b0601050507030106082b06010505070302301b0603551d200414301230060604551d20003008060667810c01020130540603551d1f044d304b3049a047a0458643687474703a2f2f63726c2e7365637469676f2e636f6d2f5365637469676f5075626c696353657276657241757468656e7469636174696f6e526f6f744534362e63726c30818406082b0601050507010104783076304f06082b060105050730028643687474703a2f2f6372742e7365637469676f2e636f6d2f5365637469676f5075626c696353657276657241757468656e7469636174696f6e526f6f744534362e703763302306082b060105050730018617687474703a2f2f6f6373702e7365637469676f2e636f6d300a06082a8648ce3d040303036700306402305b0a9c140387ae25faff9a5185a30c224a40cc475141a67300180c88c9f696d1608b4c088c79c6ed2851beac21f4d7a902303dd75cb0313829d78bbb58497691e074bbec1c02b7bf28322c6ba3314f7104908369c9114fddd51c4134829a6036a755), CertificateDer(0x30820346308202cba00302010202101a9eafec6de8e19b5c193141b68d90dd300a06082a8648ce3d040303308188310b3009060355040613025553311330110603550408130a4e6577204a6572736579311430120603550407130b4a65727365792043697479311e301c060355040a131554686520555345525452555354204e6574776f726b312e302c06035504031325555345525472757374204543432043657274696669636174696f6e20417574686f72697479301e170d3231303332323030303030305a170d3338303131383233353935395a305f310b300906035504061302474231183016060355040a130f5365637469676f204c696d69746564313630340603550403132d5365637469676f205075626c6963205365727665722041757468656e7469636174696f6e20526f6f74204534363076301006072a8648ce3d020106052b810400220362000476fa99a96e20edf9d777e3073ba8db3d5f38e8ab55a6564fd648eaec7f2daac3b2c579ec99617f1079c7025af90437f534352b77ce7f208f52a30089ecd5a7a26d5be34b9293a080f50194dcf068071ecdeefe2552b520431c1bfeeb19ce43a3a38201203082011c301f0603551d230418301680143ae10986d4cf19c29676744976dce035c663639a301d0603551d0e04160414d122da4c59f14b5f2638aa9dd6eeeb0dc3fba961300e0603551d0f0101ff040403020186300f0603551d130101ff040530030101ff301d0603551d250416301406082b0601050507030106082b0601050507030230110603551d20040a300830060604551d200030500603551d1f044930473045a043a041863f687474703a2f2f63726c2e7573657274727573742e636f6d2f55534552547275737445434343657274696669636174696f6e417574686f726974792e63726c303506082b0601050507010104293027302506082b060105050730018619687474703a2f2f6f6373702e7573657274727573742e636f6d300a06082a8648ce3d04030303690030660231008c0b2062b7df6f5f66daeb11240def983bbbc2d2dc236e4bfd3caa6a186b99eb5259af28c5b29f8316911c942572e27a023100b0bd90d70ff9b62a8d470390649b3ed840e14088d0c3e3d2166b6c1d4fb4770ed3836925c7fc1897bfc7f007db2ee2d5)])
+2026-02-09T10:54:13.360199Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::client: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/client.rs:574: http1 handshake complete, spawning background dispatcher task
+2026-02-09T10:54:13.360225Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::client: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/client.rs:599: waiting for connection to be ready
+2026-02-09T10:54:13.360398Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::client: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/client.rs:609: connection is ready
+2026-02-09T10:54:13.360415Z TRACE HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::pool: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/pool.rs:728: checkout dropped for ("https", api.github.com)
+2026-02-09T10:54:13.757847Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/user otel.name="HTTP" otel.kind="client" http.status_code=200}: octocrab: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/octocrab-0.49.5/src/lib.rs:792: stream closed
+2026-02-09T10:54:13.758135Z TRACE hyper_util::client::legacy::pool: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/pool.rs:353: put; add idle connection for ("https", api.github.com)
+2026-02-09T10:54:13.758165Z DEBUG hyper_util::client::legacy::pool: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/pool.rs:401: pooling idle connection for ("https", api.github.com)
+2026-02-09T10:54:13.779627Z TRACE tower::buffer::service: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/service.rs:111: sending request to buffer worker
+2026-02-09T10:54:13.779627Z TRACE mio::poll: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mio-1.1.1/src/poll.rs:573: registering event source with poller: token=Token(0), interests=READABLE
+2026-02-09T10:54:13.779659Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:80: worker polling for next message
+2026-02-09T10:54:13.779670Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:96: processing new request
+2026-02-09T10:54:13.779675Z TRACE mio::poll: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mio-1.1.1/src/poll.rs:573: registering event source with poller: token=Token(1), interests=READABLE
+2026-02-09T10:54:13.779675Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:163: resumed=false worker received request; waiting for service readiness
+2026-02-09T10:54:13.779694Z DEBUG tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:169: service.ready=true processing request
+2026-02-09T10:54:13.779749Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/repos/rust-lang/rust/issues?per_page=10&page=1 otel.name="HTTP" otel.kind="client"}: octocrab: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/octocrab-0.49.5/src/lib.rs:778: requesting
+2026-02-09T10:54:13.779767Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:176: returning response future
+2026-02-09T10:54:13.779804Z TRACE tower::buffer::worker: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-0.5.3/src/buffer/worker.rs:80: worker polling for next message
+2026-02-09T10:54:13.779831Z TRACE HTTP{http.method=GET http.url=https://api.github.com/repos/rust-lang/rust/issues?per_page=10&page=1 otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::pool: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/pool.rs:660: take? ("https", api.github.com): expiration = Some(90s)
+2026-02-09T10:54:13.779969Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/repos/rust-lang/rust/issues?per_page=10&page=1 otel.name="HTTP" otel.kind="client"}: hyper_util::client::legacy::pool: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/pool.rs:268: reuse idle connection for ("https", api.github.com)
+2026-02-09T10:54:15.041809Z TRACE hyper_util::client::legacy::pool: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/pool.rs:353: put; add idle connection for ("https", api.github.com)
+2026-02-09T10:54:15.041808Z DEBUG HTTP{http.method=GET http.url=https://api.github.com/repos/rust-lang/rust/issues?per_page=10&page=1 otel.name="HTTP" otel.kind="client" http.status_code=200}: octocrab: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/octocrab-0.49.5/src/lib.rs:792: stream closed
+2026-02-09T10:54:15.042024Z DEBUG hyper_util::client::legacy::pool: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.20/src/client/legacy/pool.rs:401: pooling idle connection for ("https", api.github.com)
+2026-02-09T10:54:15.055315Z  INFO issue_me::ui::components::issue_list: src/ui/components/issue_list.rs:209: New Page with 10 issues
+2026-02-09T10:54:35.873122Z TRACE mio::poll: /Users/jayansunil/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mio-1.1.1/src/poll.rs:704: deregistering event source from poller

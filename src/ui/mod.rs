@@ -8,7 +8,7 @@ use crate::{
         search_bar::TextSearch, status_bar::StatusBar,
     },
 };
-use crossterm::event::EventStream;
+use crossterm::{cursor::Show, event::EventStream, execute};
 use futures::{StreamExt, future::FutureExt};
 use octocrab::{
     Page,
@@ -16,7 +16,7 @@ use octocrab::{
 };
 use rat_widget::{
     event::{HandleEvent, Regular},
-    focus::{Focus, FocusBuilder},
+    focus::{Focus, FocusBuilder, HasFocus},
 };
 use ratatui::{crossterm, prelude::*, widgets::Block};
 use termprofile::{DetectorSettings, TermProfile};
@@ -93,7 +93,7 @@ impl App {
         action_rx: tokio::sync::mpsc::Receiver<Action>,
         state: AppState,
     ) -> Result<Self, AppError> {
-        let text_search = TextSearch::default();
+        let text_search = TextSearch::new(state.clone());
         let status_bar = StatusBar::new(state.clone());
         let label_list = LabelList::default();
         let issue_handler = GITHUB_CLIENT
@@ -109,9 +109,9 @@ impl App {
             action_rx,
             cancel_action: Default::default(),
             components: vec![
-                Box::new(text_search),
                 Box::new(issue_list),
                 Box::new(label_list),
+                Box::new(text_search), // This should be the last component so that the popup area is rendered properly
             ],
             dumb_components: vec![Box::new(status_bar)],
         })
@@ -121,7 +121,6 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<impl std::io::Write>>,
     ) -> Result<(), AppError> {
         let ctok = self.cancel_action.clone();
-
         let action_tx = self.action_tx.clone();
         for component in self.components.iter_mut() {
             component.register_action_tx(action_tx.clone());
@@ -168,7 +167,13 @@ impl App {
                 Some(Action::Tick) => {
                     terminal.draw(|f| {
                         let layout = layout::Layout::new(f.area());
+                        for component in self.components.iter() {
+                            if let Some(p) = component.cursor() {
+                                f.set_cursor_position(p);
+                            }
+                        }
                         let buf = f.buffer_mut();
+
                         let areas = layout.areas();
                         for area in areas {
                             let w = Block::bordered()
@@ -230,8 +235,11 @@ pub enum Action {
     AppEvent(crossterm::event::Event),
     NewPage(Box<Page<Issue>>),
     ChangeLabels(Vec<Label>),
+    FinishedLoading,
 }
 
 pub mod components;
+pub mod filter;
 pub mod layout;
 pub mod theme;
+pub mod utils;

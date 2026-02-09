@@ -14,7 +14,7 @@ use ratatui::{
 };
 use ratatui_macros::{line, span};
 
-use crate::ui::{COLOR_PROFILE, components::Component, layout::Layout};
+use crate::ui::{COLOR_PROFILE, components::Component, layout::Layout, utils::get_border_style};
 
 const MARKER: &str = ratatui::symbols::marker::DOT;
 
@@ -61,6 +61,7 @@ impl LabelList {
     pub fn render(&mut self, area: Layout, buf: &mut Buffer) {
         let block = Block::bordered()
             .border_type(ratatui::widgets::BorderType::Rounded)
+            .border_style(get_border_style(&self.state))
             .title("Labels");
         let list = rat_widget::list::List::<RowSelection>::new(
             self.labels.iter().map(Into::<ListItem>::into),

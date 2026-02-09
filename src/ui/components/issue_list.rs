@@ -15,11 +15,12 @@ use ratatui::{
 use ratatui_macros::{line, span};
 use textwrap::{Options, wrap};
 use throbber_widgets_tui::ThrobberState;
+use tracing::info;
 
 use crate::{
     app::GITHUB_CLIENT,
     errors::AppError,
-    ui::{Action, components::Component, layout::Layout},
+    ui::{Action, components::Component, layout::Layout, utils::get_border_style},
 };
 
 pub struct IssueList<'a> {
@@ -73,6 +74,7 @@ impl<'a> IssueList<'a> {
     pub fn render(&mut self, area: Layout, buf: &mut Buffer) {
         let block = Block::bordered()
             .border_type(ratatui::widgets::BorderType::Rounded)
+            .border_style(get_border_style(&self.list_state))
             .padding(Padding::horizontal(3));
         let list = rat_widget::list::List::<RowSelection>::new(
             self.issues.iter().map(Into::<ListItem>::into),
@@ -204,6 +206,7 @@ impl Component for IssueList<'_> {
                 }
             }
             crate::ui::Action::NewPage(mut p) => {
+                info!("New Page with {} issues", p.items.len());
                 let issues = std::mem::take(&mut p.items)
                     .into_iter()
                     .map(IssueListItem::from);

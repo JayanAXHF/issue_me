@@ -4,7 +4,7 @@ use inquire::Password;
 use crate::auth::AuthProvider;
 use crate::errors::AppError;
 use crate::github::GithubClient;
-use crate::ui;
+use crate::{logging, ui};
 use std::sync::OnceLock;
 
 pub struct App {
@@ -32,6 +32,7 @@ impl App {
 
     pub async fn run(&mut self) -> Result<(), AppError> {
         use crate::ui::AppState;
+        logging::init()?;
         let current_user = GITHUB_CLIENT
             .get()
             .unwrap()

@@ -17,6 +17,8 @@ pub enum AppError {
     #[error(transparent)]
     TokioMpsc(#[from] tokio::sync::mpsc::error::SendError<crate::ui::Action>),
     #[error(transparent)]
+    InitLoggingError(#[from] tracing_subscriber::util::TryInitError),
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 

@@ -24,4 +24,7 @@ pub trait Component: HasFocus {
     async fn handle_event(&mut self, event: Action) {
         let _ = event;
     }
+    fn cursor(&self) -> Option<(u16, u16)> {
+        None
+    }
 }
