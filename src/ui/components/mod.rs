@@ -27,4 +27,7 @@ pub trait Component: HasFocus {
     fn cursor(&self) -> Option<(u16, u16)> {
         None
     }
+    fn should_render(&self) -> bool {
+        true
+    }
 }

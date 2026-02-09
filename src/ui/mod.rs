@@ -4,11 +4,15 @@ use crate::{
     app::GITHUB_CLIENT,
     errors::AppError,
     ui::components::{
-        Component, DumbComponent, issue_list::IssueList, label_list::LabelList,
-        search_bar::TextSearch, status_bar::StatusBar,
+        Component, DumbComponent,
+        issue_detail::IssuePreview,
+        issue_list::{IssueList, MainScreen},
+        label_list::LabelList,
+        search_bar::TextSearch,
+        status_bar::StatusBar,
     },
 };
-use crossterm::{cursor::Show, event::EventStream, execute};
+use crossterm::event::EventStream;
 use futures::{StreamExt, future::FutureExt};
 use octocrab::{
     Page,
@@ -16,12 +20,14 @@ use octocrab::{
 };
 use rat_widget::{
     event::{HandleEvent, Regular},
-    focus::{Focus, FocusBuilder, HasFocus},
+    focus::{Focus, FocusBuilder},
 };
 use ratatui::{crossterm, prelude::*, widgets::Block};
 use termprofile::{DetectorSettings, TermProfile};
 use tokio::{select, sync::mpsc::Sender};
 use tokio_util::sync::CancellationToken;
+
+use crate::ui::components::issue_detail::{IssuePreviewSeed, PrSummary};
 
 const TICK_RATE: std::time::Duration = std::time::Duration::from_millis(100);
 const FPS: usize = 60;
@@ -96,6 +102,7 @@ impl App {
         let text_search = TextSearch::new(state.clone());
         let status_bar = StatusBar::new(state.clone());
         let label_list = LabelList::new(state.clone());
+        let issue_preview = IssuePreview::new(state.clone());
         let issue_handler = GITHUB_CLIENT
             .get()
             .unwrap()
@@ -111,6 +118,7 @@ impl App {
             components: vec![
                 Box::new(issue_list),
                 Box::new(label_list),
+                Box::new(issue_preview),
                 Box::new(text_search), // This should be the last component so that the popup area is rendered properly
             ],
             dumb_components: vec![Box::new(status_bar)],
@@ -234,10 +242,32 @@ pub enum Action {
     Quit,
     AppEvent(crossterm::event::Event),
     NewPage(Box<Page<Issue>>),
-    SelectedIssue { number: u64, labels: Vec<Label> },
-    IssueLabelsUpdated { number: u64, labels: Vec<Label> },
-    LabelMissing { name: String },
-    LabelEditError { message: String },
+    SelectedIssue {
+        number: u64,
+        labels: Vec<Label>,
+    },
+    SelectedIssuePreview {
+        seed: IssuePreviewSeed,
+    },
+    IssuePreviewLoaded {
+        number: u64,
+        open_prs: Vec<PrSummary>,
+    },
+    IssuePreviewError {
+        number: u64,
+        message: String,
+    },
+    IssueLabelsUpdated {
+        number: u64,
+        labels: Vec<Label>,
+    },
+    LabelMissing {
+        name: String,
+    },
+    LabelEditError {
+        message: String,
+    },
+    ChangeIssueScreen(MainScreen),
     FinishedLoading,
 }
 

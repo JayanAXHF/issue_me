@@ -1,3 +1,13 @@
+use crate::{
+    app::GITHUB_CLIENT,
+    errors::AppError,
+    ui::{
+        Action,
+        components::{Component, issue_detail::IssuePreviewSeed},
+        layout::Layout,
+        utils::get_border_style,
+    },
+};
 use async_trait::async_trait;
 use octocrab::{
     Page,
@@ -17,12 +27,6 @@ use textwrap::{Options, wrap};
 use throbber_widgets_tui::ThrobberState;
 use tracing::info;
 
-use crate::{
-    app::GITHUB_CLIENT,
-    errors::AppError,
-    ui::{Action, components::Component, layout::Layout, utils::get_border_style},
-};
-
 pub struct IssueList<'a> {
     pub issues: Vec<IssueListItem>,
     pub page: Option<Page<Issue>>,
@@ -31,6 +35,7 @@ pub struct IssueList<'a> {
     pub action_tx: Option<tokio::sync::mpsc::Sender<crate::ui::Action>>,
     pub throbber_state: ThrobberState,
     state: State,
+    pub screen: MainScreen,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -38,6 +43,12 @@ enum State {
     #[default]
     Loading,
     Loaded,
+}
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MainScreen {
+    #[default]
+    List,
+    Details,
 }
 
 impl<'a> IssueList<'a> {
@@ -68,6 +79,7 @@ impl<'a> IssueList<'a> {
             issues: vec![],
             list_state: rat_widget::list::ListState::default(),
             handler,
+            screen: MainScreen::default(),
             state: State::default(),
         }
     }
@@ -161,6 +173,7 @@ impl Component for IssueList<'_> {
     fn register_action_tx(&mut self, action_tx: tokio::sync::mpsc::Sender<crate::ui::Action>) {
         self.action_tx = Some(action_tx);
     }
+
     async fn handle_event(&mut self, event: crate::ui::Action) {
         match event {
             crate::ui::Action::Tick => {
@@ -207,6 +220,14 @@ impl Component for IssueList<'_> {
                             })
                             .await
                             .unwrap();
+                        self.action_tx
+                            .as_ref()
+                            .unwrap()
+                            .send(crate::ui::Action::SelectedIssuePreview {
+                                seed: IssuePreviewSeed::from_issue(issue),
+                            })
+                            .await
+                            .unwrap();
                     }
                 }
             }
@@ -230,6 +251,10 @@ impl Component for IssueList<'_> {
             }
             _ => {}
         }
+    }
+
+    fn should_render(&self) -> bool {
+        self.screen == MainScreen::List
     }
 }
 

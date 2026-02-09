@@ -5,14 +5,12 @@ use rat_widget::{
     event::{HandleEvent, Popup, Regular, ct_event},
     focus::{HasFocus, impl_has_focus},
     popup::Placement,
-    text_input::TextInputState,
 };
 use ratatui::{
     buffer::Buffer,
-    style::{Style, Stylize},
+    style::Style,
     widgets::{Block, BorderType, StatefulWidget, Widget},
 };
-use ratatui_macros::span;
 use throbber_widgets_tui::ThrobberState;
 use tracing::info;
 use tracing::instrument;

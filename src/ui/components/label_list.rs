@@ -10,7 +10,7 @@ use rat_cursor::HasScreenCursor;
 use rat_widget::{
     event::{HandleEvent, Regular},
     focus::HasFocus,
-    list::{ListState, ListStyle, selection::RowSelection},
+    list::{ListState, selection::RowSelection},
     text_input::{TextInput, TextInputState},
 };
 use ratatui::{
@@ -133,6 +133,7 @@ impl LabelList {
         let list = rat_widget::list::List::<RowSelection>::new(
             self.labels.iter().map(Into::<ListItem>::into),
         )
+        .select_style(Style::default().bg(Color::Black))
         .focus_style(Style::default().bold().bg(Color::Black))
         .block(block);
         list.render(list_area, buf, &mut self.state);
