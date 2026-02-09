@@ -16,7 +16,7 @@ pub fn init() -> Result<(), AppError> {
         .with_writer(log_file)
         .with_target(true)
         .with_ansi(false);
-    let s = tracing_subscriber::registry()
+    tracing_subscriber::registry()
         .with(file_subscriber)
         .with(ErrorLayer::default())
         .try_init()?;

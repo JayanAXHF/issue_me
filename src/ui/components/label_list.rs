@@ -1,4 +1,5 @@
 use std::{
+    slice,
     str::FromStr,
     time::{Duration, Instant},
 };
@@ -176,10 +177,10 @@ impl LabelList {
     }
 
     fn expire_status(&mut self) {
-        if let Some(status) = &self.status_message {
-            if status.at.elapsed() > STATUS_TTL {
-                self.status_message = None;
-            }
+        if let Some(status) = &self.status_message
+            && status.at.elapsed() > STATUS_TTL
+        {
+            self.status_message = None;
         }
     }
 
@@ -200,11 +201,11 @@ impl LabelList {
             self.state.clear_selection();
             return;
         }
-        if let Some(name) = previous_name {
-            if let Some(idx) = self.labels.iter().position(|l| l.name == name) {
-                self.state.select(Some(idx));
-                return;
-            }
+        if let Some(name) = previous_name
+            && let Some(idx) = self.labels.iter().position(|l| l.name == name)
+        {
+            self.state.select(Some(idx));
+            return;
         }
         let _ = self.state.select(Some(0));
     }
@@ -267,7 +268,10 @@ impl LabelList {
             };
             let handler = client.inner().issues(owner, repo);
             match handler.get_label(&name).await {
-                Ok(_) => match handler.add_labels(issue_number, &[name.clone()]).await {
+                Ok(_) => match handler
+                    .add_labels(issue_number, slice::from_ref(&name))
+                    .await
+                {
                     Ok(labels) => {
                         let _ = action_tx
                             .send(Action::IssueLabelsUpdated {
@@ -376,7 +380,10 @@ impl LabelList {
             };
             let handler = client.inner().issues(owner, repo);
             match handler.create_label(&name, &color, "").await {
-                Ok(_) => match handler.add_labels(issue_number, &[name.clone()]).await {
+                Ok(_) => match handler
+                    .add_labels(issue_number, slice::from_ref(&name))
+                    .await
+                {
                     Ok(labels) => {
                         let _ = action_tx
                             .send(Action::IssueLabelsUpdated {

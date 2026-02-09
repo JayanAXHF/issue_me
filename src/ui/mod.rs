@@ -185,10 +185,10 @@ impl App {
                     terminal.draw(|f| {
                         let layout = layout::Layout::new(f.area());
                         for component in self.components.iter() {
-                            if component.should_render() {
-                                if let Some(p) = component.cursor() {
-                                    f.set_cursor_position(p);
-                                }
+                            if component.should_render()
+                                && let Some(p) = component.cursor()
+                            {
+                                f.set_cursor_position(p);
                             }
                         }
                         let buf = f.buffer_mut();
@@ -233,7 +233,7 @@ impl App {
     }
     #[instrument(skip(self))]
     async fn handle_event(&mut self, event: crossterm::event::Event) -> Result<(), AppError> {
-        let _capture_focus = self
+        let capture_focus = self
             .components
             .iter()
             .any(|c| c.should_render() && c.capture_focus_event(&event));
@@ -242,6 +242,7 @@ impl App {
         info!(outcome = ?outcome, "Focus");
         if let Outcome::Continue = outcome
             && let crossterm::event::Event::Key(key) = event
+            && !capture_focus
         {
             self.handle_key(key).await?;
         }

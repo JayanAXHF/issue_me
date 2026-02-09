@@ -19,12 +19,7 @@ use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState, WhichUse
 
 use crate::{
     app::GITHUB_CLIENT,
-    ui::{
-        Action, AppState,
-        components::{Component, issue_list::MainScreen},
-        layout::Layout,
-        utils::get_border_style,
-    },
+    ui::{Action, AppState, components::Component, layout::Layout, utils::get_border_style},
 };
 
 #[derive(Debug, Clone)]

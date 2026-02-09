@@ -5,6 +5,7 @@ use std::{
 
 use async_trait::async_trait;
 use octocrab::models::issues::Comment as ApiComment;
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use rat_cursor::HasScreenCursor;
 use rat_widget::{
     event::{HandleEvent, ct_event},
@@ -20,7 +21,7 @@ use ratatui::{
     widgets::{Block, ListItem, StatefulWidget},
 };
 use ratatui_macros::line;
-use textwrap::{Options, wrap};
+use textwrap::core::display_width;
 use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState, WhichUse};
 
 use crate::{
@@ -62,7 +63,7 @@ pub struct CommentView {
 
 impl CommentView {
     pub fn from_api(comment: ApiComment) -> Self {
-        let body = comment.body.unwrap_or_else(|| "".to_string());
+        let body = comment.body.unwrap_or_default();
         Self {
             id: comment.id.0,
             author: Arc::<str>::from(comment.user.login.as_str()),
@@ -76,6 +77,10 @@ pub struct IssueConversation {
     action_tx: Option<tokio::sync::mpsc::Sender<Action>>,
     current: Option<IssueConversationSeed>,
     cache: HashMap<u64, Vec<CommentView>>,
+    markdown_cache: HashMap<u64, Vec<Line<'static>>>,
+    body_cache: Option<Vec<Line<'static>>>,
+    body_cache_number: Option<u64>,
+    markdown_width: usize,
     loading: HashSet<u64>,
     posting: bool,
     error: Option<String>,
@@ -98,6 +103,10 @@ impl IssueConversation {
             action_tx: None,
             current: None,
             cache: HashMap::new(),
+            markdown_cache: HashMap::new(),
+            body_cache: None,
+            body_cache_number: None,
+            markdown_width: 0,
             loading: HashSet::new(),
             posting: false,
             error: None,
@@ -129,6 +138,16 @@ impl IssueConversation {
             .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(get_border_style(&self.list_state));
 
+        if !self.is_loading_current() {
+            list_block = list_block.title("Conversation");
+        }
+
+        let list = rat_widget::list::List::<RowSelection>::new(items)
+            .block(list_block)
+            .style(Style::default())
+            .focus_style(Style::default().bold().reversed())
+            .select_style(Style::default().add_modifier(Modifier::BOLD));
+        list.render(content_area, buf, &mut self.list_state);
         if self.is_loading_current() {
             let title_area = Rect {
                 x: content_area.x + 1,
@@ -142,16 +161,7 @@ impl IssueConversation {
                 .throbber_set(BRAILLE_SIX_DOUBLE)
                 .use_type(WhichUse::Spin);
             StatefulWidget::render(throbber, title_area, buf, &mut self.throbber_state);
-        } else {
-            list_block = list_block.title("Conversation");
         }
-
-        let list = rat_widget::list::List::<RowSelection>::new(items)
-            .block(list_block)
-            .style(Style::default())
-            .focus_style(Style::default().bold().reversed())
-            .select_style(Style::default().add_modifier(Modifier::BOLD));
-        list.render(content_area, buf, &mut self.list_state);
 
         let input_title = if let Some(err) = &self.post_error {
             format!("Comment (Ctrl+Enter to send) | {err}")
@@ -183,9 +193,16 @@ impl IssueConversation {
         }
     }
 
-    fn build_items(&self, content_area: Rect) -> Vec<ListItem<'static>> {
+    fn build_items(&mut self, content_area: Rect) -> Vec<ListItem<'static>> {
         let mut items = Vec::new();
         let width = content_area.width.saturating_sub(4).max(10) as usize;
+
+        if self.markdown_width != width {
+            self.markdown_width = width;
+            self.markdown_cache.clear();
+            self.body_cache = None;
+            self.body_cache_number = None;
+        }
 
         if let Some(err) = &self.error {
             items.push(ListItem::new(line![Span::styled(
@@ -208,22 +225,31 @@ impl IssueConversation {
             .map(|b| b.as_ref())
             .filter(|b| !b.trim().is_empty())
         {
-            items.push(build_comment_item(
-                seed.author.as_ref().to_string(),
-                seed.created_at.as_ref().to_string(),
-                body.to_string(),
-                width,
+            if self.body_cache_number != Some(seed.number) {
+                self.body_cache_number = Some(seed.number);
+                self.body_cache = None;
+            }
+            let body_lines = self
+                .body_cache
+                .get_or_insert_with(|| render_markdown_lines(body, width, 2));
+            items.push(build_comment_item_from_lines(
+                seed.author.as_ref(),
+                seed.created_at.as_ref(),
+                body_lines,
                 seed.author.as_ref() == self.current_user,
             ));
         }
 
         if let Some(comments) = self.cache.get(&seed.number) {
             for comment in comments {
-                items.push(build_comment_item(
-                    comment.author.as_ref().to_string(),
-                    comment.created_at.as_ref().to_string(),
-                    comment.body.as_ref().to_string(),
-                    width,
+                let body_lines = self
+                    .markdown_cache
+                    .entry(comment.id)
+                    .or_insert_with(|| render_markdown_lines(comment.body.as_ref(), width, 2));
+                items.push(build_comment_item_from_lines(
+                    comment.author.as_ref(),
+                    comment.created_at.as_ref(),
+                    body_lines,
                     comment.author.as_ref() == self.current_user,
                 ));
             }
@@ -391,6 +417,8 @@ impl Component for IssueConversation {
                 let number = seed.number;
                 self.current = Some(seed);
                 self.post_error = None;
+                self.body_cache = None;
+                self.body_cache_number = Some(number);
                 if self.cache.contains_key(&number) {
                     self.loading.remove(&number);
                     self.error = None;
@@ -465,7 +493,9 @@ impl Component for IssueConversation {
         match event {
             crossterm::event::Event::Key(key) => matches!(
                 key.code,
-                crossterm::event::KeyCode::Tab | crossterm::event::KeyCode::BackTab
+                crossterm::event::KeyCode::Tab
+                    | crossterm::event::KeyCode::BackTab
+                    | crossterm::event::KeyCode::Char('q')
             ),
             _ => false,
         }
@@ -498,10 +528,9 @@ impl HasFocus for IssueConversation {
 }
 
 fn build_comment_item(
-    author: String,
-    created_at: String,
-    body: String,
-    width: usize,
+    author: &str,
+    created_at: &str,
+    body_lines: &[Line<'static>],
     is_self: bool,
 ) -> ListItem<'static> {
     let author_style = if is_self {
@@ -510,18 +539,317 @@ fn build_comment_item(
         Style::new().fg(Color::Cyan)
     };
     let header = Line::from(vec![
-        Span::styled(author, author_style),
+        Span::styled(author.to_string(), author_style),
         Span::raw("  "),
-        Span::styled(created_at, Style::new().dim()),
+        Span::styled(created_at.to_string(), Style::new().dim()),
     ]);
-    let mut lines = vec![header];
-    let wrap_opts = Options::new(width).break_words(false);
-    let wrapped = wrap(&body, wrap_opts);
-    for line in wrapped {
-        lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::raw(line.into_owned()),
-        ]));
-    }
+    let mut lines = Vec::with_capacity(1 + body_lines.len());
+    lines.push(header);
+    lines.extend(body_lines.iter().cloned());
     ListItem::new(lines)
+}
+
+fn build_comment_item_from_lines(
+    author: &str,
+    created_at: &str,
+    body_lines: &[Line<'static>],
+    is_self: bool,
+) -> ListItem<'static> {
+    build_comment_item(author, created_at, body_lines, is_self)
+}
+
+fn render_markdown_lines(text: &str, width: usize, indent: usize) -> Vec<Line<'static>> {
+    let mut renderer = MarkdownRenderer::new(width, indent);
+    let parser = Parser::new_ext(text, Options::ENABLE_STRIKETHROUGH);
+    for event in parser {
+        match event {
+            Event::Start(tag) => renderer.start_tag(tag),
+            Event::End(tag) => renderer.end_tag(tag),
+            Event::Text(text) => renderer.text(&text),
+            Event::Code(text) => renderer.inline_code(&text),
+            Event::SoftBreak => renderer.soft_break(),
+            Event::HardBreak => renderer.hard_break(),
+            Event::Html(text) => renderer.text(&text),
+            _ => {}
+        }
+    }
+    renderer.finish()
+}
+
+struct MarkdownRenderer {
+    lines: Vec<Line<'static>>,
+    current_line: Vec<Span<'static>>,
+    current_width: usize,
+    max_width: usize,
+    indent: usize,
+    style_stack: Vec<Style>,
+    current_style: Style,
+    in_block_quote: bool,
+    in_code_block: bool,
+    list_prefix: Option<String>,
+    pending_space: bool,
+}
+
+impl MarkdownRenderer {
+    fn new(max_width: usize, indent: usize) -> Self {
+        Self {
+            lines: Vec::new(),
+            current_line: Vec::new(),
+            current_width: 0,
+            max_width: max_width.max(10),
+            indent,
+            style_stack: Vec::new(),
+            current_style: Style::new(),
+            in_block_quote: false,
+            in_code_block: false,
+            list_prefix: None,
+            pending_space: false,
+        }
+    }
+
+    fn start_tag(&mut self, tag: Tag) {
+        match tag {
+            Tag::Emphasis => self.push_style(Style::new().add_modifier(Modifier::ITALIC)),
+            Tag::Strong => self.push_style(Style::new().add_modifier(Modifier::BOLD)),
+            Tag::Link { .. } => self.push_style(
+                Style::new()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::UNDERLINED),
+            ),
+            Tag::Heading { .. } => {
+                self.push_style(Style::new().add_modifier(Modifier::BOLD));
+            }
+            Tag::BlockQuote(_) => {
+                self.flush_line();
+                self.in_block_quote = true;
+            }
+            Tag::CodeBlock(..) => {
+                self.flush_line();
+                self.in_code_block = true;
+            }
+            Tag::Item => {
+                self.flush_line();
+                self.list_prefix = Some("• ".to_string());
+            }
+            _ => {}
+        }
+    }
+
+    fn end_tag(&mut self, tag: TagEnd) {
+        match tag {
+            TagEnd::Emphasis | TagEnd::Strong | TagEnd::Link | TagEnd::Heading(_) => {
+                self.pop_style();
+            }
+            TagEnd::BlockQuote => {
+                self.flush_line();
+                self.in_block_quote = false;
+                self.push_blank_line();
+            }
+            TagEnd::CodeBlock => {
+                self.flush_line();
+                self.in_code_block = false;
+                self.push_blank_line();
+            }
+            TagEnd::Item => {
+                self.flush_line();
+                self.list_prefix = None;
+            }
+            TagEnd::Paragraph => {
+                self.flush_line();
+                self.push_blank_line();
+            }
+            _ => {}
+        }
+    }
+
+    fn text(&mut self, text: &str) {
+        if self.in_code_block {
+            self.code_block_text(text);
+        } else {
+            let style = self.current_style;
+            self.push_text(text, style);
+        }
+    }
+
+    fn inline_code(&mut self, text: &str) {
+        let style = self
+            .current_style
+            .patch(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+        self.push_text(text, style);
+    }
+
+    fn soft_break(&mut self) {
+        if self.in_code_block {
+            self.hard_break();
+        } else {
+            self.pending_space = true;
+        }
+    }
+
+    fn hard_break(&mut self) {
+        self.flush_line();
+    }
+
+    fn push_text(&mut self, text: &str, style: Style) {
+        let mut buffer = String::new();
+        for ch in text.chars() {
+            if ch == '\n' {
+                if !buffer.is_empty() {
+                    self.push_word(&buffer, style);
+                    buffer.clear();
+                }
+                self.flush_line();
+                continue;
+            }
+            if ch.is_whitespace() {
+                if !buffer.is_empty() {
+                    self.push_word(&buffer, style);
+                    buffer.clear();
+                }
+                self.pending_space = true;
+            } else {
+                buffer.push(ch);
+            }
+        }
+        if !buffer.is_empty() {
+            self.push_word(&buffer, style);
+        }
+    }
+
+    fn push_word(&mut self, word: &str, style: Style) {
+        let prefix_width = self.prefix_width();
+        let max_width = self.max_width;
+        let word_width = display_width(word);
+        let space_width = if self.pending_space && self.current_width > prefix_width {
+            1
+        } else {
+            0
+        };
+
+        if word_width > max_width.saturating_sub(prefix_width) {
+            self.push_long_word(word, style);
+            self.pending_space = false;
+            return;
+        }
+
+        if self.current_line.is_empty() {
+            self.start_line();
+        }
+
+        if self.current_width + space_width + word_width > max_width
+            && self.current_width > prefix_width
+        {
+            self.flush_line();
+            self.start_line();
+        }
+
+        if self.pending_space && self.current_width > prefix_width {
+            self.current_line.push(Span::raw(" "));
+            self.current_width += 1;
+        }
+        self.pending_space = false;
+
+        self.current_line
+            .push(Span::styled(word.to_string(), style));
+        self.current_width += word_width;
+    }
+
+    fn push_long_word(&mut self, word: &str, style: Style) {
+        let available = self.max_width.saturating_sub(self.prefix_width()).max(1);
+        let wrapped = textwrap::wrap(word, textwrap::Options::new(available).break_words(true));
+        for (idx, part) in wrapped.iter().enumerate() {
+            if idx > 0 {
+                self.flush_line();
+            }
+            if self.current_line.is_empty() {
+                self.start_line();
+            }
+            self.current_line
+                .push(Span::styled(part.to_string(), style));
+            self.current_width += display_width(part);
+        }
+    }
+
+    fn code_block_text(&mut self, text: &str) {
+        let style = Style::new().fg(Color::LightYellow);
+        for line in text.split('\n') {
+            self.flush_line();
+            self.start_line();
+            self.current_line
+                .push(Span::styled(line.to_string(), style));
+            self.current_width += display_width(line);
+            self.flush_line();
+        }
+    }
+
+    fn start_line(&mut self) {
+        if !self.current_line.is_empty() {
+            return;
+        }
+        if self.indent > 0 {
+            let indent = " ".repeat(self.indent);
+            self.current_width += self.indent;
+            self.current_line.push(Span::raw(indent));
+        }
+        if self.in_block_quote {
+            self.current_width += 2;
+            self.current_line
+                .push(Span::styled("│ ", Style::new().fg(Color::DarkGray)));
+        }
+        if let Some(prefix) = &self.list_prefix {
+            self.current_width += display_width(prefix);
+            self.current_line.push(Span::raw(prefix.clone()));
+        }
+    }
+
+    fn prefix_width(&self) -> usize {
+        let mut width = self.indent;
+        if self.in_block_quote {
+            width += 2;
+        }
+        if let Some(prefix) = &self.list_prefix {
+            width += display_width(prefix);
+        }
+        width
+    }
+
+    fn flush_line(&mut self) {
+        if self.current_line.is_empty() {
+            self.pending_space = false;
+            return;
+        }
+        let line = Line::from(std::mem::take(&mut self.current_line));
+        self.lines.push(line);
+        self.current_width = 0;
+        self.pending_space = false;
+    }
+
+    fn push_blank_line(&mut self) {
+        if self.lines.last().is_some_and(|line| line.spans.is_empty()) {
+            return;
+        }
+        self.lines.push(Line::from(Vec::<Span<'static>>::new()));
+    }
+
+    fn push_style(&mut self, style: Style) {
+        self.style_stack.push(self.current_style);
+        self.current_style = self.current_style.patch(style);
+    }
+
+    fn pop_style(&mut self) {
+        if let Some(prev) = self.style_stack.pop() {
+            self.current_style = prev;
+        }
+    }
+
+    fn finish(mut self) -> Vec<Line<'static>> {
+        self.flush_line();
+        while self.lines.last().is_some_and(|line| line.spans.is_empty()) {
+            self.lines.pop();
+        }
+        if self.lines.is_empty() {
+            self.lines.push(Line::from(vec![Span::raw("")]));
+        }
+        self.lines
+    }
 }
