@@ -16,6 +16,7 @@ use octocrab::{
     issues::IssueHandler,
     models::{IssueState, issues::Issue},
 };
+use std::sync::Arc;
 use rat_widget::{
     event::HandleEvent,
     focus::{HasFocus, Navigation},
@@ -35,7 +36,7 @@ use tracing::info;
 
 pub struct IssueList<'a> {
     pub issues: Vec<IssueListItem>,
-    pub page: Option<Page<Issue>>,
+    pub page: Option<Arc<Page<Issue>>>,
     pub list_state: rat_widget::list::ListState<RowSelection>,
     pub handler: IssueHandler<'a>,
     pub action_tx: Option<tokio::sync::mpsc::Sender<crate::ui::Action>>,
@@ -78,7 +79,7 @@ impl<'a> IssueList<'a> {
             else {
                 return;
             };
-            tx.send(Action::NewPage(Box::new(p))).await.unwrap();
+            tx.send(Action::NewPage(Arc::new(p))).await.unwrap();
         });
         Self {
             page: None,
@@ -236,7 +237,7 @@ impl Component for IssueList<'_> {
                                 if let Ok(pres) = p
                                     && let Some(p) = pres
                                 {
-                                    tx.send(crate::ui::Action::NewPage(Box::new(p))).await?;
+                                    tx.send(crate::ui::Action::NewPage(Arc::new(p))).await?;
                                 }
                                 tx.send(crate::ui::Action::FinishedLoading).await.unwrap();
                                 Ok::<(), AppError>(())
@@ -264,14 +265,11 @@ impl Component for IssueList<'_> {
                     }
                 }
             }
-            crate::ui::Action::NewPage(mut p) => {
+            crate::ui::Action::NewPage(p) => {
                 info!("New Page with {} issues", p.items.len());
-                let issues = std::mem::take(&mut p.items)
-                    .into_iter()
-                    .map(IssueListItem::from);
-                let prev_issues = std::mem::take(&mut self.issues);
-                self.issues = prev_issues.into_iter().chain(issues).collect();
-                self.page = Some(*p);
+                self.issues
+                    .extend(p.items.iter().cloned().map(IssueListItem::from));
+                self.page = Some(p);
                 self.state = State::Loaded;
             }
             crate::ui::Action::FinishedLoading => {
@@ -294,6 +292,10 @@ impl Component for IssueList<'_> {
 
     fn should_render(&self) -> bool {
         self.screen == MainScreen::List
+    }
+
+    fn is_animating(&self) -> bool {
+        self.screen == MainScreen::List && self.state == State::Loading
     }
 }
 

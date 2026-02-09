@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::sync::Arc;
 use rat_cursor::HasScreenCursor;
 use rat_widget::{
     choice::{Choice, ChoiceState},
@@ -139,7 +140,7 @@ impl TextSearch {
                 .order("desc")
                 .send()
                 .await?;
-            action_tx.send(Action::NewPage(Box::new(page))).await?;
+            action_tx.send(Action::NewPage(Arc::new(page))).await?;
             action_tx.send(Action::FinishedLoading).await?;
             Ok::<(), crate::errors::AppError>(())
         });
@@ -197,5 +198,9 @@ impl Component for TextSearch {
             .screen_cursor()
             .or(self.label_state.screen_cursor())
             .or(self.cstate.screen_cursor())
+    }
+
+    fn is_animating(&self) -> bool {
+        self.state == State::Loading
     }
 }

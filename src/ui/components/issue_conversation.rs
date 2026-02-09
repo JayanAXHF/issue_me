@@ -76,7 +76,8 @@ impl CommentView {
 pub struct IssueConversation {
     action_tx: Option<tokio::sync::mpsc::Sender<Action>>,
     current: Option<IssueConversationSeed>,
-    cache: HashMap<u64, Vec<CommentView>>,
+    cache_number: Option<u64>,
+    cache_comments: Vec<CommentView>,
     markdown_cache: HashMap<u64, Vec<Line<'static>>>,
     body_cache: Option<Vec<Line<'static>>>,
     body_cache_number: Option<u64>,
@@ -102,7 +103,8 @@ impl IssueConversation {
         Self {
             action_tx: None,
             current: None,
-            cache: HashMap::new(),
+            cache_number: None,
+            cache_comments: Vec::new(),
             markdown_cache: HashMap::new(),
             body_cache: None,
             body_cache_number: None,
@@ -240,8 +242,8 @@ impl IssueConversation {
             ));
         }
 
-        if let Some(comments) = self.cache.get(&seed.number) {
-            for comment in comments {
+        if self.cache_number == Some(seed.number) {
+            for comment in &self.cache_comments {
                 let body_lines = self
                     .markdown_cache
                     .entry(comment.id)
@@ -419,7 +421,12 @@ impl Component for IssueConversation {
                 self.post_error = None;
                 self.body_cache = None;
                 self.body_cache_number = Some(number);
-                if self.cache.contains_key(&number) {
+                if self.cache_number != Some(number) {
+                    self.cache_number = None;
+                    self.cache_comments.clear();
+                    self.markdown_cache.clear();
+                }
+                if self.cache_number == Some(number) {
                     self.loading.remove(&number);
                     self.error = None;
                 } else {
@@ -427,18 +434,27 @@ impl Component for IssueConversation {
                 }
             }
             Action::IssueCommentsLoaded { number, comments } => {
-                self.cache.insert(number, comments);
                 self.loading.remove(&number);
                 if self.current.as_ref().is_some_and(|s| s.number == number) {
+                    self.cache_number = Some(number);
+                    self.cache_comments = comments;
+                    self.markdown_cache.clear();
+                    self.body_cache = None;
                     self.error = None;
                 }
             }
             Action::IssueCommentPosted { number, comment } => {
                 self.posting = false;
-                if let Some(list) = self.cache.get_mut(&number) {
-                    list.push(comment);
-                } else {
-                    self.cache.insert(number, vec![comment]);
+                if self.current.as_ref().is_some_and(|s| s.number == number) {
+                    if self.cache_number == Some(number) {
+                        self.cache_comments.push(comment);
+                    } else {
+                        self.cache_number = Some(number);
+                        self.cache_comments.clear();
+                        self.cache_comments.push(comment);
+                        self.markdown_cache.clear();
+                        self.body_cache = None;
+                    }
                 }
             }
             Action::IssueCommentsError { number, message } => {
@@ -481,6 +497,10 @@ impl Component for IssueConversation {
 
     fn should_render(&self) -> bool {
         self.screen == MainScreen::Details
+    }
+
+    fn is_animating(&self) -> bool {
+        self.screen == MainScreen::Details && (self.is_loading_current() || self.posting)
     }
 
     fn capture_focus_event(&self, event: &crossterm::event::Event) -> bool {

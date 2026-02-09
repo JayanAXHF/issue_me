@@ -1,4 +1,7 @@
-use std::{io::stdout, sync::OnceLock, time::Duration};
+use std::{
+    io::stdout,
+    sync::{Arc, OnceLock},
+};
 
 use crate::{
     app::GITHUB_CLIENT,
@@ -35,7 +38,6 @@ use crate::ui::components::{
 };
 
 const TICK_RATE: std::time::Duration = std::time::Duration::from_millis(100);
-const FPS: usize = 60;
 pub static COLOR_PROFILE: OnceLock<TermProfile> = OnceLock::new();
 
 pub async fn run(
@@ -145,17 +147,12 @@ impl App {
 
         tokio::spawn(async move {
             let mut tick_interval = tokio::time::interval(TICK_RATE);
-            let mut frame_interval =
-                tokio::time::interval(Duration::from_secs_f64(1.0 / FPS as f64));
             let mut event_stream = EventStream::new();
 
             loop {
                 let event = select! {
                     _ = ctok.cancelled() => break,
                     _ = tick_interval.tick() => Action::Tick,
-                    _ = frame_interval.tick() => {
-                        Action::Render
-                    },
                     kevent = event_stream.next().fuse() => {
                         match kevent {
                             Some(Ok(kevent)) => Action::AppEvent(kevent),
@@ -179,37 +176,14 @@ impl App {
                     component.handle_event(action.clone()).await;
                 }
             }
+            let should_draw = match &action {
+                Some(Action::Tick) => self.has_animated_components(),
+                Some(Action::None) => false,
+                Some(Action::Quit) | None => false,
+                _ => true,
+            };
             match action {
-                Some(Action::None) => {}
-                Some(Action::Tick) => {
-                    terminal.draw(|f| {
-                        let layout = layout::Layout::new(f.area());
-                        for component in self.components.iter() {
-                            if component.should_render()
-                                && let Some(p) = component.cursor()
-                            {
-                                f.set_cursor_position(p);
-                            }
-                        }
-                        let buf = f.buffer_mut();
-
-                        let areas = layout.areas();
-                        for area in areas {
-                            let w = Block::bordered()
-                                .border_type(ratatui::widgets::BorderType::Rounded);
-                            w.render(area, buf);
-                        }
-                        for component in self.components.iter_mut() {
-                            if component.should_render() {
-                                component.render(layout, buf);
-                            }
-                        }
-                        for component in self.dumb_components.iter_mut() {
-                            component.render(layout, buf);
-                        }
-                    })?;
-                }
-                Some(Action::Render) => {}
+                Some(Action::None) | Some(Action::Tick) => {}
                 Some(Action::ForceFocusChange) => {
                     let focus = focus(self);
                     let r = focus.next_force();
@@ -223,6 +197,9 @@ impl App {
                     break;
                 }
                 _ => {}
+            }
+            if should_draw {
+                self.draw(terminal)?;
             }
             if self.cancel_action.is_cancelled() {
                 break;
@@ -258,6 +235,44 @@ impl App {
 
         Ok(())
     }
+
+    fn has_animated_components(&self) -> bool {
+        self.components
+            .iter()
+            .any(|component| component.should_render() && component.is_animating())
+    }
+
+    fn draw(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<impl std::io::Write>>,
+    ) -> Result<(), AppError> {
+        terminal.draw(|f| {
+            let layout = layout::Layout::new(f.area());
+            for component in self.components.iter() {
+                if component.should_render()
+                    && let Some(p) = component.cursor()
+                {
+                    f.set_cursor_position(p);
+                }
+            }
+            let buf = f.buffer_mut();
+
+            let areas = layout.areas();
+            for area in areas {
+                let w = Block::bordered().border_type(ratatui::widgets::BorderType::Rounded);
+                w.render(area, buf);
+            }
+            for component in self.components.iter_mut() {
+                if component.should_render() {
+                    component.render(layout, buf);
+                }
+            }
+            for component in self.dumb_components.iter_mut() {
+                component.render(layout, buf);
+            }
+        })?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -265,10 +280,9 @@ impl App {
 pub enum Action {
     None,
     Tick,
-    Render,
     Quit,
     AppEvent(crossterm::event::Event),
-    NewPage(Box<Page<Issue>>),
+    NewPage(Arc<Page<Issue>>),
     SelectedIssue {
         number: u64,
         labels: Vec<Label>,

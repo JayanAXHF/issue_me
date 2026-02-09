@@ -32,6 +32,9 @@ pub trait Component: HasFocus {
     fn should_render(&self) -> bool {
         true
     }
+    fn is_animating(&self) -> bool {
+        false
+    }
     fn capture_focus_event(&self, _event: &Event) -> bool {
         false
     }

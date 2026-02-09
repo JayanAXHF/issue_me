@@ -365,6 +365,12 @@ impl Component for IssuePreview {
             _ => {}
         }
     }
+
+    fn is_animating(&self) -> bool {
+        self.current
+            .as_ref()
+            .is_some_and(|s| self.loading.contains(&s.number))
+    }
 }
 
 impl HasFocus for IssuePreview {

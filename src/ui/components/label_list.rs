@@ -598,6 +598,10 @@ impl Component for LabelList {
             _ => None,
         }
     }
+
+    fn is_animating(&self) -> bool {
+        self.status_message.is_some()
+    }
 }
 impl HasFocus for LabelList {
     fn build(&self, builder: &mut rat_widget::focus::FocusBuilder) {
