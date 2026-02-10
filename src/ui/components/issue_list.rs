@@ -29,10 +29,15 @@ use ratatui::{
     widgets::{Block, ListItem, Padding, StatefulWidget},
 };
 use ratatui_macros::{line, span};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
+};
 use textwrap::{Options, wrap};
 use throbber_widgets_tui::ThrobberState;
 use tracing::info;
+
+pub static LOADED_ISSUE_COUNT: AtomicU32 = AtomicU32::new(0);
 
 pub struct IssueList<'a> {
     pub issues: Vec<IssueListItem>,
@@ -65,6 +70,7 @@ impl<'a> IssueList<'a> {
         repo: String,
         tx: tokio::sync::mpsc::Sender<Action>,
     ) -> Self {
+        LOADED_ISSUE_COUNT.store(0, Ordering::Relaxed);
         tokio::spawn(async move {
             let Ok(mut p) = GITHUB_CLIENT
                 .get()
@@ -277,10 +283,12 @@ impl Component for IssueList<'_> {
                     }
                 }
             }
-            crate::ui::Action::NewPage(mut p) => {
+            crate::ui::Action::NewPage(p) => {
                 info!("New Page with {} issues", p.items.len());
                 self.issues
                     .extend(p.items.iter().cloned().map(IssueListItem::from));
+                let count = self.issues.len().min(u32::MAX as usize) as u32;
+                LOADED_ISSUE_COUNT.store(count, Ordering::Relaxed);
                 self.page = Some(p);
                 self.state = State::Loaded;
             }
