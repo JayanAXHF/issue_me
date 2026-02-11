@@ -10,9 +10,9 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::Style,
-    widgets::{Block, BlockExt, BorderType, Clear, Padding, StatefulWidget, Widget},
+    widgets::{Block, BorderType, StatefulWidget, Widget},
 };
-use std::{cmp::min, sync::Arc};
+use std::sync::Arc;
 use throbber_widgets_tui::ThrobberState;
 use tracing::info;
 use tracing::instrument;
@@ -28,6 +28,13 @@ use crate::{
 };
 
 const OPTIONS: [&str; 3] = ["Open", "Closed", "All"];
+pub const HELP: &str = "\
+Search Bar Help:\n\
+- Type issue text in Search\n\
+- Type labels in Search Labels (separate multiple labels with ';')\n\
+- Use Tab / Shift+Tab to move between inputs and status selector\n\
+- Enter: run search\n\
+";
 
 pub struct TextSearch {
     search_state: rat_widget::text_input::TextInputState,
@@ -238,5 +245,11 @@ impl Component for TextSearch {
                 event,
                 ct_event!(keycode press Tab) | ct_event!(keycode press BackTab)
             )
+    }
+
+    fn set_global_help(&self) {
+        if let Some(action_tx) = &self.action_tx {
+            let _ = action_tx.try_send(Action::SetHelp(HELP));
+        }
     }
 }

@@ -38,7 +38,10 @@ use throbber_widgets_tui::ThrobberState;
 use tracing::info;
 
 pub static LOADED_ISSUE_COUNT: AtomicU32 = AtomicU32::new(0);
-
+pub const HELP: &str = "\
+↑/↓: Navigate Issues
+Enter: View Issue Details
+";
 pub struct IssueList<'a> {
     pub issues: Vec<IssueListItem>,
     pub page: Option<Arc<Page<Issue>>>,
@@ -324,6 +327,15 @@ impl Component for IssueList<'_> {
     }
     fn set_index(&mut self, index: usize) {
         self.index = index;
+    }
+
+    fn set_global_help(&self) {
+        info!("Setting global help for IssueList");
+        self.action_tx
+            .as_ref()
+            .unwrap()
+            .try_send(crate::ui::Action::SetHelp(HELP))
+            .unwrap();
     }
 }
 

@@ -15,6 +15,12 @@ use ratatui_macros::line;
 
 use crate::ui::{Action, AppState, components::Component, layout::Layout, utils::get_border_style};
 
+pub const HELP: &str = "\
+Issue Preview Help:\n\
+- Read-only panel showing metadata for the selected issue\n\
+- Use global focus keys (1-5) to switch to an interactive component\n\
+";
+
 #[derive(Debug, Clone)]
 pub struct IssuePreviewSeed {
     pub number: u64,
@@ -67,6 +73,7 @@ pub struct PrSummary {
 
 pub struct IssuePreview {
     current: Option<IssuePreviewSeed>,
+    action_tx: Option<tokio::sync::mpsc::Sender<Action>>,
     focus: FocusFlag,
     area: Rect,
 }
@@ -75,6 +82,7 @@ impl IssuePreview {
     pub fn new(_: AppState) -> Self {
         Self {
             current: None,
+            action_tx: None,
             focus: FocusFlag::new().with_name("issue_preview"),
             area: Rect::default(),
         }
@@ -187,9 +195,19 @@ impl Component for IssuePreview {
         self.render(area, buf);
     }
 
+    fn register_action_tx(&mut self, action_tx: tokio::sync::mpsc::Sender<Action>) {
+        self.action_tx = Some(action_tx);
+    }
+
     async fn handle_event(&mut self, event: Action) {
         if let Action::SelectedIssuePreview { seed } = event {
             self.current = Some(seed);
+        }
+    }
+
+    fn set_global_help(&self) {
+        if let Some(action_tx) = &self.action_tx {
+            let _ = action_tx.try_send(Action::SetHelp(HELP));
         }
     }
 }

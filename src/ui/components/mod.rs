@@ -5,6 +5,7 @@ use ratatui::buffer::Buffer;
 use crate::ui::{Action, layout::Layout};
 use ratatui::crossterm::event::Event;
 
+pub mod help;
 pub mod issue_conversation;
 pub mod issue_detail;
 pub mod issue_list;
@@ -40,4 +41,6 @@ pub trait Component: HasFocus {
     }
     #[allow(unused_variables)]
     fn set_index(&mut self, index: usize) {}
+
+    fn set_global_help(&self) {}
 }

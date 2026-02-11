@@ -36,6 +36,15 @@ use crate::{
     },
 };
 
+pub const HELP: &str = "\
+Issue Conversation Help:\n\
+- Up/Down: select issue body/comment entry\n\
+- PageUp/PageDown/Home/End: scroll message body pane\n\
+- Ctrl+P: toggle comment input/preview\n\
+- Ctrl+Enter or Alt+Enter: send comment\n\
+- Esc: return to issue list screen\n\
+";
+
 #[derive(Debug, Clone)]
 pub struct IssueConversationSeed {
     pub number: u64,
@@ -690,6 +699,12 @@ impl Component for IssueConversation {
     }
     fn set_index(&mut self, index: usize) {
         self.index = index;
+    }
+
+    fn set_global_help(&self) {
+        if let Some(action_tx) = &self.action_tx {
+            let _ = action_tx.try_send(Action::SetHelp(HELP));
+        }
     }
 }
 

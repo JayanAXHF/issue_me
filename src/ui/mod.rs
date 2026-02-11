@@ -30,12 +30,12 @@ use octocrab::{
 };
 use rat_widget::{
     event::{HandleEvent, Outcome, Regular},
-    focus::{Focus, FocusBuilder},
+    focus::{Focus, FocusBuilder, FocusFlag},
 };
 use ratatui::{
     crossterm,
     prelude::*,
-    widgets::{Block, Paragraph},
+    widgets::{Block, Paragraph, Wrap},
 };
 use ratatui_macros::line;
 use std::{
@@ -56,6 +56,19 @@ use crate::ui::components::{
 const TICK_RATE: std::time::Duration = std::time::Duration::from_millis(100);
 pub static COLOR_PROFILE: OnceLock<TermProfile> = OnceLock::new();
 pub static CIDMAP: OnceLock<HashMap<u8, usize>> = OnceLock::new();
+const HELP_TEXT: &str = "
+Global Help:\n\
+\n\
+- Press '1' to focus Search Bar\n\
+- Press '2' to focus Issue List\n\
+- Press '3' to focus Issue Conversation\n\
+- Press '4' to focus Label List\n\
+- Press '5' to focus Issue Preview\n\
+- Press 'q' or 'Ctrl+C' to quit the application\n\
+- Press '?' or 'Ctrl+H' to toggle this help menu\n\
+\n\
+Navigate through the application using the keyboard shortcuts above. Each component may have its own specific controls once focused.
+";
 
 pub async fn run(
     AppState {
@@ -89,6 +102,9 @@ struct App {
     cancel_action: CancellationToken,
     components: Vec<Box<dyn Component>>,
     dumb_components: Vec<Box<dyn DumbComponent>>,
+    help: Option<&'static str>,
+    in_help: bool,
+    last_focused: Option<FocusFlag>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -151,8 +167,11 @@ impl App {
         )?;
         Ok(Self {
             focus: None,
+            in_help: false,
+            help: None,
             action_tx,
             action_rx,
+            last_focused: None,
             cancel_action: Default::default(),
             components: comps,
             dumb_components: vec![Box::new(status_bar)],
@@ -167,14 +186,19 @@ impl App {
         for component in self.components.iter_mut() {
             component.register_action_tx(action_tx.clone());
         }
-        let _ = execute!(
+        execute!(
             stdout(),
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
-        );
-        let _ = execute!(
+        )?;
+        execute!(
             stdout(),
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES)
-        );
+        )?;
+
+        execute!(
+            stdout(),
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+        )?;
         tokio::spawn(async move {
             let mut tick_interval = tokio::time::interval(TICK_RATE);
             let mut event_stream = EventStream::new();
@@ -208,6 +232,10 @@ impl App {
             if let Some(ref action) = action {
                 for component in self.components.iter_mut() {
                     component.handle_event(action.clone()).await;
+                    if component.gained_focus() && self.last_focused != Some(component.focus()) {
+                        self.last_focused = Some(component.focus());
+                        component.set_global_help();
+                    }
                 }
             }
             let should_draw = match &action {
@@ -231,6 +259,9 @@ impl App {
                 Some(Action::AppEvent(ref event)) => {
                     self.handle_event(event).await?;
                 }
+                Some(Action::SetHelp(help)) => {
+                    self.help = Some(help);
+                }
                 Some(Action::Quit) | None => {
                     ctok.cancel();
                     break;
@@ -252,11 +283,21 @@ impl App {
         use crossterm::event::Event::Key;
         use crossterm::event::KeyCode::*;
         use rat_widget::event::ct_event;
+        info!(?event, "Handling event");
         if matches!(
             event,
             ct_event!(key press CONTROL-'c') | ct_event!(key press CONTROL-'q')
         ) {
             self.cancel_action.cancel();
+            return Ok(());
+        }
+        if matches!(event, ct_event!(key press CONTROL-'h')) {
+            self.in_help = !self.in_help;
+            self.help = Some(HELP_TEXT);
+            return Ok(());
+        }
+        if self.in_help && matches!(event, ct_event!(keycode press Esc)) {
+            self.in_help = false;
             return Ok(());
         }
 
@@ -313,6 +354,9 @@ impl App {
         {
             self.cancel_action.cancel();
         }
+        if matches!(key.code, Char('?')) {
+            self.in_help = !self.in_help;
+        }
 
         Ok(())
     }
@@ -328,7 +372,8 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<impl std::io::Write>>,
     ) -> Result<(), AppError> {
         terminal.draw(|f| {
-            let layout = layout::Layout::new(f.area());
+            let area = f.area();
+            let layout = layout::Layout::new(area);
             for component in self.components.iter() {
                 if component.should_render()
                     && let Some(p) = component.cursor()
@@ -348,6 +393,21 @@ impl App {
             }
             for component in self.dumb_components.iter_mut() {
                 component.render(layout, buf);
+            }
+            if self.in_help {
+                let help_text = self.help.unwrap_or(HELP_TEXT);
+                let help_component = components::help::HelpComponent::new(
+                    Paragraph::new(help_text)
+                        .wrap(Wrap { trim: true })
+                        .centered(),
+                )
+                .set_constraints([30, 30])
+                .block(
+                    Block::bordered()
+                        .title("Help")
+                        .border_type(ratatui::widgets::BorderType::Rounded),
+                );
+                help_component.render(area, buf);
             }
         })?;
         Ok(())
@@ -411,4 +471,5 @@ pub enum Action {
     FinishedLoading,
     ForceFocusChange,
     ForceFocusChangeRev,
+    SetHelp(&'static str),
 }

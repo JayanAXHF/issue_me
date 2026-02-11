@@ -33,6 +33,15 @@ use crate::{
 const MARKER: &str = ratatui::symbols::marker::DOT;
 const STATUS_TTL: Duration = Duration::from_secs(3);
 const DEFAULT_COLOR: &str = "ededed";
+pub const HELP: &str = "\
+Label List Help:\n\
+- Up/Down: select label\n\
+- a: add label to selected issue\n\
+- d: remove selected label from issue\n\
+- Enter: submit add/create input\n\
+- Esc: cancel current label edit flow\n\
+- y / n: confirm or cancel creating missing label\n\
+";
 
 #[derive(Debug)]
 pub struct LabelList {
@@ -616,6 +625,12 @@ impl Component for LabelList {
     }
     fn set_index(&mut self, index: usize) {
         self.index = index;
+    }
+
+    fn set_global_help(&self) {
+        if let Some(action_tx) = &self.action_tx {
+            let _ = action_tx.try_send(Action::SetHelp(HELP));
+        }
     }
 }
 impl HasFocus for LabelList {
