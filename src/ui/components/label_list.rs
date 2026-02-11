@@ -152,7 +152,14 @@ impl LabelList {
                 }
                 LabelEditMode::ConfirmCreate { name } => {
                     let prompt = format!("Label \"{name}\" not found. Create? (y/n)");
-                    Paragraph::new(prompt).render(area, buf);
+                    Paragraph::new(prompt)
+                        .block(
+                            Block::bordered()
+                                .border_type(ratatui::widgets::BorderType::Rounded)
+                                .border_style(Style::default().yellow())
+                                .title("Confirm [y/n]"),
+                        )
+                        .render(area, buf);
                 }
                 LabelEditMode::CreateColor { input, .. } => {
                     let widget = TextInput::new().block(

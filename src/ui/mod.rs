@@ -16,7 +16,10 @@ use crate::{
         status_bar::StatusBar,
     },
 };
-use crossterm::event::EventStream;
+use crossterm::{
+    event::{EventStream, KeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
+    execute,
+};
 use futures::{StreamExt, future::FutureExt};
 use octocrab::{
     Page,
@@ -144,7 +147,14 @@ impl App {
         for component in self.components.iter_mut() {
             component.register_action_tx(action_tx.clone());
         }
-
+        let _ = execute!(
+            stdout(),
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+        );
+        let _ = execute!(
+            stdout(),
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES)
+        );
         tokio::spawn(async move {
             let mut tick_interval = tokio::time::interval(TICK_RATE);
             let mut event_stream = EventStream::new();

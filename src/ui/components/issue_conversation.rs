@@ -1,16 +1,13 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
-
 use async_trait::async_trait;
+use crossterm::event;
 use octocrab::models::issues::Comment as ApiComment;
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use rat_cursor::HasScreenCursor;
 use rat_widget::{
-    event::{HandleEvent, ct_event},
+    event::{HandleEvent, TextOutcome, ct_event},
     focus::{FocusBuilder, FocusFlag, HasFocus, Navigation},
     list::{ListState, selection::RowSelection},
+    paragraph::{Paragraph, ParagraphState},
     textarea::{TextArea, TextAreaState, TextWrap},
 };
 use ratatui::{
@@ -21,6 +18,10 @@ use ratatui::{
     widgets::{Block, ListItem, StatefulWidget},
 };
 use ratatui_macros::line;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use textwrap::core::display_width;
 use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState, WhichUse};
 use tracing::info;
@@ -97,6 +98,24 @@ pub struct IssueConversation {
     screen: MainScreen,
     focus: FocusFlag,
     area: Rect,
+    textbox_state: InputState,
+    paragraph_state: ParagraphState,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+enum InputState {
+    #[default]
+    Input,
+    Preview,
+}
+
+impl InputState {
+    fn toggle(&mut self) {
+        *self = match self {
+            InputState::Input => InputState::Preview,
+            InputState::Preview => InputState::Input,
+        };
+    }
 }
 
 impl IssueConversation {
@@ -107,6 +126,7 @@ impl IssueConversation {
             cache_number: None,
             cache_comments: Vec::new(),
             markdown_cache: HashMap::new(),
+            paragraph_state: Default::default(),
             body_cache: None,
             body_cache_number: None,
             markdown_width: 0,
@@ -119,6 +139,7 @@ impl IssueConversation {
             current_user: app_state.current_user,
             list_state: ListState::default(),
             input_state: TextAreaState::new(),
+            textbox_state: InputState::default(),
             throbber_state: ThrobberState::default(),
             post_throbber_state: ThrobberState::default(),
             screen: MainScreen::default(),
@@ -167,19 +188,41 @@ impl IssueConversation {
             StatefulWidget::render(throbber, title_area, buf, &mut self.throbber_state);
         }
 
-        let input_title = if let Some(err) = &self.post_error {
-            format!("Comment (Ctrl+Enter to send) | {err}")
-        } else {
-            "Comment (Ctrl+Enter to send)".to_string()
-        };
-        let input_block = Block::bordered()
-            .border_type(ratatui::widgets::BorderType::Rounded)
-            .border_style(get_border_style(&self.input_state))
-            .title(input_title);
-        let input_widget = TextArea::new()
-            .block(input_block)
-            .text_wrap(TextWrap::Word(4));
-        input_widget.render(input_area, buf, &mut self.input_state);
+        match self.textbox_state {
+            InputState::Input => {
+                let input_title = if let Some(err) = &self.post_error {
+                    format!("Comment (Ctrl+Enter to send) | {err}")
+                } else {
+                    "Comment (Ctrl+Enter to send)".to_string()
+                };
+                let mut input_block = Block::bordered()
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                    .border_style(get_border_style(&self.input_state));
+                if !self.posting {
+                    input_block = input_block.title(input_title);
+                }
+                let input_widget = TextArea::new()
+                    .block(input_block)
+                    .text_wrap(TextWrap::Word(4));
+                input_widget.render(input_area, buf, &mut self.input_state);
+            }
+            InputState::Preview => {
+                let rendered =
+                    render_markdown_lines(&self.input_state.text(), self.markdown_width, 2);
+                let para = Paragraph::new(rendered)
+                    .block(
+                        Block::bordered()
+                            .border_type(ratatui::widgets::BorderType::Rounded)
+                            .border_style(get_border_style(&self.paragraph_state))
+                            .title("Preview"),
+                    )
+                    .focus_style(Style::default())
+                    .hide_focus(true)
+                    .wrap(ratatui::widgets::Wrap { trim: true });
+
+                para.render(input_area, buf, &mut self.paragraph_state);
+            }
+        }
 
         if self.posting {
             let title_area = Rect {
@@ -384,26 +427,37 @@ impl Component for IssueConversation {
                 if self.screen != MainScreen::Details {
                     return;
                 }
-                if matches!(event, ct_event!(keycode press Tab)) && self.input_state.is_focused() {
-                    self.action_tx
-                        .as_ref()
-                        .unwrap()
-                        .send(Action::ForceFocusChange)
-                        .await
-                        .unwrap();
-                }
-                if let crossterm::event::Event::Key(key) = event {
-                    if key.code == crossterm::event::KeyCode::Esc {
+
+                match event {
+                    ct_event!(keycode press Tab) | ct_event!(keycode press SHIFT-Tab)
+                        if self.input_state.is_focused() =>
+                    {
+                        self.action_tx
+                            .as_ref()
+                            .unwrap()
+                            .send(Action::ForceFocusChange)
+                            .await
+                            .unwrap();
+                    }
+                    ct_event!(keycode press Esc) => {
                         if let Some(tx) = self.action_tx.clone() {
                             let _ = tx.send(Action::ChangeIssueScreen(MainScreen::List)).await;
                         }
                         return;
                     }
-                    if key.code == crossterm::event::KeyCode::Enter
-                        && key
-                            .modifiers
-                            .contains(crossterm::event::KeyModifiers::CONTROL)
-                    {
+                    ct_event!(key press CONTROL-'p') => {
+                        self.textbox_state.toggle();
+                        match self.textbox_state {
+                            InputState::Input => {
+                                self.input_state.focus.set(true);
+                            }
+                            InputState::Preview => {
+                                self.paragraph_state.focus.set(true);
+                            }
+                        }
+                    }
+                    ct_event!(keycode press CONTROL-Enter) | ct_event!(keycode press ALT-Enter) => {
+                        info!("Enter pressed");
                         let Some(seed) = &self.current else {
                             return;
                         };
@@ -417,11 +471,20 @@ impl Component for IssueConversation {
                         self.send_comment(seed.number, trimmed.to_string()).await;
                         return;
                     }
+                    event::Event::Key(key) if key.code != event::KeyCode::Tab => {
+                        let o = self.input_state.handle(event, rat_widget::event::Regular);
+                        if o == TextOutcome::TextChanged {
+                            self.action_tx
+                                .as_ref()
+                                .unwrap()
+                                .send(Action::ForceRender)
+                                .await
+                                .unwrap();
+                        }
+                    }
+                    _ => {}
                 }
                 self.list_state.handle(event, rat_widget::event::Regular);
-                if !matches!(event, ct_event!(keycode press Tab)) {
-                    self.input_state.handle(event, rat_widget::event::Regular);
-                }
             }
             Action::EnterIssueDetails { seed } => {
                 let number = seed.number;
@@ -541,7 +604,10 @@ impl HasFocus for IssueConversation {
     fn build(&self, builder: &mut FocusBuilder) {
         let tag = builder.start(self);
         builder.widget(&self.list_state);
-        builder.widget(&self.input_state);
+        match self.textbox_state {
+            InputState::Input => builder.widget(&self.input_state),
+            InputState::Preview => builder.widget(&self.paragraph_state),
+        };
         builder.end(tag);
     }
 
