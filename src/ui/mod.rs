@@ -110,6 +110,11 @@ impl AppState {
 }
 
 fn focus(state: &mut App) -> &mut Focus {
+    focus_noret(state);
+    state.focus.as_mut().unwrap()
+}
+
+fn focus_noret(state: &mut App) {
     let mut f = FocusBuilder::new(state.focus.take());
     for component in state.components.iter() {
         if component.should_render() {
@@ -117,7 +122,6 @@ fn focus(state: &mut App) -> &mut Focus {
         }
     }
     state.focus = Some(f.build());
-    state.focus.as_mut().unwrap()
 }
 
 impl App {
@@ -140,11 +144,11 @@ impl App {
             IssueList::new(issue_handler, state.owner, state.repo, action_tx.clone()).await;
 
         let comps = define_cid_map!(
-             1 -> text_search,
              2 -> issue_list,
              3 -> issue_conversation,
              4 -> label_list,
-             5 -> issue_preview
+             5 -> issue_preview,
+             1 -> text_search, // this needs to be the last one
         )?;
         Ok(Self {
             focus: None,
@@ -194,7 +198,11 @@ impl App {
             }
             Ok::<(), AppError>(())
         });
-
+        focus_noret(self);
+        if let Some(ref mut focus) = self.focus {
+            let last = self.components.last().unwrap();
+            focus.focus(&**last);
+        }
         let ctok = self.cancel_action.clone();
         loop {
             let action = self.action_rx.recv().await;
@@ -255,28 +263,35 @@ impl App {
         {
             self.handle_key(key).await?;
         }
+        if let crossterm::event::Event::Key(key) = event {
+            match key.code {
+                crossterm::event::KeyCode::Char(char)
+                    if ('1'..'5').contains(&char)
+                        && !self
+                            .components
+                            .iter()
+                            .any(|c| c.should_render() && c.capture_focus_event(event)) =>
+                {
+                    //SAFETY: char is in range
+                    let index: u8 = char.to_digit(10).unwrap().try_into().unwrap();
+                    //SAFETY: cid is always in map, and map is static
+                    info!("Focusing {}", index);
+                    let cid = CIDMAP.get().unwrap().get(&index).unwrap();
+                    //SAFETY: cid is in map, and map is static
+                    let component = unsafe { self.components.get_unchecked(*cid) };
+
+                    if let Some(f) = self.focus.as_mut() {
+                        f.focus(component.as_ref());
+                    }
+                }
+                _ => {}
+            }
+        }
         Ok(())
     }
     async fn handle_key(&mut self, key: &crossterm::event::KeyEvent) -> Result<(), AppError> {
         if matches!(key.code, crossterm::event::KeyCode::Char('q')) {
             self.cancel_action.cancel();
-        }
-
-        match key.code {
-            crossterm::event::KeyCode::Char(char) if ('1'..'5').contains(&char) => {
-                //SAFETY: char is in range
-                let index: u8 = char.to_digit(10).unwrap().try_into().unwrap();
-                //SAFETY: cid is always in map, and map is static
-                info!("Focusing {}", index);
-                let cid = CIDMAP.get().unwrap().get(&index).unwrap();
-                //SAFETY: cid is in map, and map is static
-                let component = unsafe { self.components.get_unchecked(*cid) };
-
-                if let Some(f) = self.focus.as_mut() {
-                    f.focus(component.as_ref());
-                }
-            }
-            _ => {}
         }
 
         Ok(())

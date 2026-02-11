@@ -4,7 +4,7 @@ macro_rules! define_cid_map {
     let mut map = ::std::collections::HashMap::new();
     let mut elements: std::vec::Vec<::std::boxed::Box<dyn Component>> = ::std::vec::Vec::new();
     $(
-        $ty.set_index(elements.len() + 1);
+        $ty.set_index($index);
         elements.push(::std::boxed::Box::new($ty));
         map.insert($index, elements.len() - 1);
     )*
