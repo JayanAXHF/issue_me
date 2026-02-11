@@ -17,7 +17,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, ListItem, StatefulWidget},
 };
-use ratatui_macros::line;
+use ratatui_macros::{horizontal, line, vertical};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -92,6 +92,7 @@ pub struct IssueConversation {
     repo: String,
     current_user: String,
     list_state: ListState<RowSelection>,
+    message_keys: Vec<MessageKey>,
     input_state: TextAreaState,
     throbber_state: ThrobberState,
     post_throbber_state: ThrobberState,
@@ -100,6 +101,7 @@ pub struct IssueConversation {
     area: Rect,
     textbox_state: InputState,
     paragraph_state: ParagraphState,
+    body_paragraph_state: ParagraphState,
     index: usize,
 }
 
@@ -108,6 +110,12 @@ enum InputState {
     #[default]
     Input,
     Preview,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MessageKey {
+    IssueBody(u64),
+    Comment(u64),
 }
 
 impl InputState {
@@ -139,6 +147,7 @@ impl IssueConversation {
             repo: app_state.repo,
             current_user: app_state.current_user,
             list_state: ListState::default(),
+            message_keys: Vec::new(),
             input_state: TextAreaState::new(),
             textbox_state: InputState::default(),
             throbber_state: ThrobberState::default(),
@@ -146,20 +155,21 @@ impl IssueConversation {
             screen: MainScreen::default(),
             focus: FocusFlag::new().with_name("issue_conversation"),
             area: Rect::default(),
+            body_paragraph_state: ParagraphState::default(),
             index: 0,
         }
     }
 
     pub fn render(&mut self, area: Layout, buf: &mut Buffer) {
         self.area = area.main_content;
-        let areas = TuiLayout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(5)])
-            .split(area.main_content);
+        let areas = vertical![*=1, ==5].split(area.main_content);
         let content_area = areas[0];
         let input_area = areas[1];
+        let content_split = horizontal![*=1, *=1].split(content_area);
+        let list_area = content_split[0];
+        let body_area = content_split[1];
 
-        let items = self.build_items(content_area);
+        let items = self.build_items(list_area, body_area);
         info!("Rendering {} comments", items.len());
         let mut list_block = Block::bordered()
             .border_type(ratatui::widgets::BorderType::Rounded)
@@ -174,11 +184,12 @@ impl IssueConversation {
             .style(Style::default())
             .focus_style(Style::default().bold().reversed())
             .select_style(Style::default().add_modifier(Modifier::BOLD));
-        list.render(content_area, buf, &mut self.list_state);
+        list.render(list_area, buf, &mut self.list_state);
+        self.render_body(body_area, buf);
         if self.is_loading_current() {
             let title_area = Rect {
-                x: content_area.x + 1,
-                y: content_area.y,
+                x: list_area.x + 1,
+                y: list_area.y,
                 width: 10,
                 height: 1,
             };
@@ -242,9 +253,11 @@ impl IssueConversation {
         }
     }
 
-    fn build_items(&mut self, content_area: Rect) -> Vec<ListItem<'static>> {
+    fn build_items(&mut self, list_area: Rect, body_area: Rect) -> Vec<ListItem<'static>> {
         let mut items = Vec::new();
-        let width = content_area.width.saturating_sub(4).max(10) as usize;
+        let width = body_area.width.saturating_sub(4).max(10) as usize;
+        let preview_width = list_area.width.saturating_sub(12).max(8) as usize;
+        self.message_keys.clear();
 
         if self.markdown_width != width {
             self.markdown_width = width;
@@ -265,6 +278,7 @@ impl IssueConversation {
                 "Press Enter on an issue to view the conversation.".to_string(),
                 Style::new().dim()
             )]));
+            self.list_state.clear_selection();
             return items;
         };
 
@@ -281,12 +295,14 @@ impl IssueConversation {
             let body_lines = self
                 .body_cache
                 .get_or_insert_with(|| render_markdown_lines(body, width, 2));
-            items.push(build_comment_item_from_lines(
+            items.push(build_comment_preview_item(
                 seed.author.as_ref(),
                 seed.created_at.as_ref(),
                 body_lines,
+                preview_width,
                 seed.author.as_ref() == self.current_user,
             ));
+            self.message_keys.push(MessageKey::IssueBody(seed.number));
         }
 
         if self.cache_number == Some(seed.number) {
@@ -300,16 +316,66 @@ impl IssueConversation {
                     .markdown_cache
                     .entry(comment.id)
                     .or_insert_with(|| render_markdown_lines(comment.body.as_ref(), width, 2));
-                items.push(build_comment_item_from_lines(
+                items.push(build_comment_preview_item(
                     comment.author.as_ref(),
                     comment.created_at.as_ref(),
                     body_lines,
+                    preview_width,
                     comment.author.as_ref() == self.current_user,
                 ));
+                self.message_keys.push(MessageKey::Comment(comment.id));
             }
         }
 
+        if items.is_empty() {
+            self.list_state.clear_selection();
+        } else {
+            let selected = self.list_state.selected_checked().unwrap_or(0);
+            let clamped = selected.min(items.len() - 1);
+            let _ = self.list_state.select(Some(clamped));
+        }
+
         items
+    }
+
+    fn render_body(&mut self, body_area: Rect, buf: &mut Buffer) {
+        let body_lines: Vec<Line<'static>> = self
+            .selected_body_lines()
+            .map(|v| v.to_vec())
+            .unwrap_or_else(|| {
+                vec![Line::from(vec![Span::styled(
+                    "Select a message to view full content.".to_string(),
+                    Style::new().dim(),
+                )])]
+            });
+
+        let body = Paragraph::new(body_lines)
+            .block(
+                Block::bordered()
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                    .border_style(get_border_style(&self.body_paragraph_state))
+                    .title("Message Body (PageUp/PageDown/Home/End)"),
+            )
+            .focus_style(Style::default())
+            .hide_focus(true)
+            .wrap(ratatui::widgets::Wrap { trim: false });
+
+        body.render(body_area, buf, &mut self.body_paragraph_state);
+    }
+
+    fn selected_body_lines(&self) -> Option<&[Line<'static>]> {
+        let selected = self.list_state.selected_checked()?;
+        let key = self.message_keys.get(selected)?;
+        match key {
+            MessageKey::IssueBody(number) => {
+                if self.body_cache_number == Some(*number) {
+                    self.body_cache.as_deref()
+                } else {
+                    None
+                }
+            }
+            MessageKey::Comment(id) => self.markdown_cache.get(id).map(Vec::as_slice),
+        }
     }
 
     fn is_loading_current(&self) -> bool {
@@ -441,7 +507,14 @@ impl Component for IssueConversation {
                             .await
                             .unwrap();
                     }
-                    ct_event!(keycode press Esc) => {
+                    ct_event!(keycode press Esc) if self.body_paragraph_state.is_focused() => self
+                        .action_tx
+                        .as_ref()
+                        .unwrap()
+                        .send(Action::ForceFocusChangeRev)
+                        .await
+                        .unwrap(),
+                    ct_event!(keycode press Esc) if !self.body_paragraph_state.is_focused() => {
                         if let Some(tx) = self.action_tx.clone() {
                             let _ = tx.send(Action::ChangeIssueScreen(MainScreen::List)).await;
                         }
@@ -457,6 +530,14 @@ impl Component for IssueConversation {
                                 self.paragraph_state.focus.set(true);
                             }
                         }
+                    }
+                    ct_event!(keycode press Enter) if self.list_state.is_focused() => {
+                        self.action_tx
+                            .as_ref()
+                            .unwrap()
+                            .send(Action::ForceFocusChange)
+                            .await
+                            .unwrap();
                     }
                     ct_event!(keycode press CONTROL-Enter) | ct_event!(keycode press ALT-Enter) => {
                         info!("Enter pressed");
@@ -486,7 +567,12 @@ impl Component for IssueConversation {
                     }
                     _ => {}
                 }
-                self.list_state.handle(event, rat_widget::event::Regular);
+                self.body_paragraph_state
+                    .handle(event, rat_widget::event::Regular);
+                let outcome = self.list_state.handle(event, rat_widget::event::Regular);
+                if outcome == rat_widget::event::Outcome::Changed {
+                    self.body_paragraph_state.set_line_offset(0);
+                }
             }
             Action::EnterIssueDetails { seed } => {
                 let number = seed.number;
@@ -494,6 +580,7 @@ impl Component for IssueConversation {
                 self.post_error = None;
                 self.body_cache = None;
                 self.body_cache_number = Some(number);
+                self.body_paragraph_state.set_line_offset(0);
                 if self.cache_number != Some(number) {
                     self.cache_number = None;
                     self.cache_comments.clear();
@@ -514,6 +601,7 @@ impl Component for IssueConversation {
                     self.cache_comments = comments;
                     self.markdown_cache.clear();
                     self.body_cache = None;
+                    self.body_paragraph_state.set_line_offset(0);
                     self.error = None;
                     self.action_tx
                         .as_ref()
@@ -609,6 +697,7 @@ impl HasFocus for IssueConversation {
     fn build(&self, builder: &mut FocusBuilder) {
         let tag = builder.start(self);
         builder.widget(&self.list_state);
+        builder.widget(&self.body_paragraph_state);
         match self.textbox_state {
             InputState::Input => builder.widget(&self.input_state),
             InputState::Preview => builder.widget(&self.paragraph_state),
@@ -636,7 +725,7 @@ impl HasFocus for IssueConversation {
 fn build_comment_item(
     author: &str,
     created_at: &str,
-    body_lines: &[Line<'static>],
+    preview: &str,
     is_self: bool,
 ) -> ListItem<'static> {
     let author_style = if is_self {
@@ -649,19 +738,50 @@ fn build_comment_item(
         Span::raw("  "),
         Span::styled(created_at.to_string(), Style::new().dim()),
     ]);
-    let mut lines = Vec::with_capacity(1 + body_lines.len());
-    lines.push(header);
-    lines.extend(body_lines.iter().cloned());
-    ListItem::new(lines)
+    let preview_line = Line::from(vec![
+        Span::raw("  "),
+        Span::styled(preview.to_string(), Style::new().dim()),
+    ]);
+    ListItem::new(vec![header, preview_line])
 }
 
-fn build_comment_item_from_lines(
+fn build_comment_preview_item(
     author: &str,
     created_at: &str,
     body_lines: &[Line<'static>],
+    preview_width: usize,
     is_self: bool,
 ) -> ListItem<'static> {
-    build_comment_item(author, created_at, body_lines, is_self)
+    let preview = extract_preview(body_lines, preview_width);
+    build_comment_item(author, created_at, &preview, is_self)
+}
+
+fn extract_preview(lines: &[Line<'static>], preview_width: usize) -> String {
+    for line in lines {
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return truncate_preview(trimmed, preview_width.max(8));
+        }
+    }
+    "(empty)".to_string()
+}
+
+fn truncate_preview(input: &str, max_width: usize) -> String {
+    if display_width(input) <= max_width {
+        return input.to_string();
+    }
+    let mut out = String::new();
+    for ch in input.chars() {
+        let mut candidate = out.clone();
+        candidate.push(ch);
+        if display_width(&candidate) + 3 > max_width {
+            break;
+        }
+        out.push(ch);
+    }
+    out.push_str("...");
+    out
 }
 
 fn render_markdown_lines(text: &str, width: usize, indent: usize) -> Vec<Line<'static>> {

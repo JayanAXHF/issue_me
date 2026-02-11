@@ -10,9 +10,9 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::Style,
-    widgets::{Block, BorderType, StatefulWidget, Widget},
+    widgets::{Block, BlockExt, BorderType, Clear, Padding, StatefulWidget, Widget},
 };
-use std::sync::Arc;
+use std::{cmp::min, sync::Arc};
 use throbber_widgets_tui::ThrobberState;
 use tracing::info;
 use tracing::instrument;
@@ -88,7 +88,6 @@ impl TextSearch {
         let (widget, popup) = Choice::new()
             .items(contents)
             .popup_placement(Placement::Below)
-            .popup_style(Style::default())
             .focus_style(Style::default())
             .select_style(Style::default())
             .button_style(Style::default())
@@ -99,6 +98,7 @@ impl TextSearch {
             .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(get_border_style(&self.cstate));
         let binner = block.inner(layout.status_dropdown);
+
         block.render(layout.status_dropdown, buf);
         popup.render(layout.status_dropdown, buf, &mut self.cstate);
         widget.render(binner, buf, &mut self.cstate);
@@ -230,5 +230,13 @@ impl Component for TextSearch {
     }
     fn set_index(&mut self, index: usize) {
         self.index = index;
+    }
+
+    fn capture_focus_event(&self, event: &crossterm::event::Event) -> bool {
+        self.self_is_focused()
+            && !matches!(
+                event,
+                ct_event!(keycode press Tab) | ct_event!(keycode press BackTab)
+            )
     }
 }
