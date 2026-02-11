@@ -216,6 +216,11 @@ impl App {
                     let r = focus.next_force();
                     info!(outcome = ?r, "Focus");
                 }
+                Some(Action::ForceFocusChangeRev) => {
+                    let focus = focus(self);
+                    let r = focus.prev_force();
+                    info!(outcome = ?r, "Focus");
+                }
                 Some(Action::AppEvent(ref event)) => {
                     self.handle_event(event).await?;
                 }
@@ -370,4 +375,5 @@ pub enum Action {
     ChangeIssueScreen(MainScreen),
     FinishedLoading,
     ForceFocusChange,
+    ForceFocusChangeRev,
 }

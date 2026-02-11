@@ -212,7 +212,7 @@ impl Component for IssueList<'_> {
                 if self.screen != MainScreen::List {
                     return;
                 }
-                if matches!(event, ct_event!(keycode press Enter)) {
+                if matches!(event, ct_event!(keycode press Enter)) && self.list_state.is_focused() {
                     if let Some(selected) = self.list_state.selected_checked() {
                         let issue = &self.issues[selected].0;
                         self.action_tx

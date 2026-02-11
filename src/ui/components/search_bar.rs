@@ -10,7 +10,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::Style,
-    widgets::{Block, BorderType, StatefulWidget, Widget},
+    widgets::{Block, BorderType, Clear, StatefulWidget, Widget},
 };
 use std::sync::Arc;
 use throbber_widgets_tui::ThrobberState;
@@ -88,7 +88,6 @@ impl TextSearch {
         let (widget, popup) = Choice::new()
             .items(contents)
             .popup_placement(Placement::Below)
-            .popup_style(Style::default())
             .focus_style(Style::default())
             .select_style(Style::default())
             .button_style(Style::default())
@@ -100,6 +99,9 @@ impl TextSearch {
             .border_style(get_border_style(&self.cstate));
         let binner = block.inner(layout.status_dropdown);
         block.render(layout.status_dropdown, buf);
+        for area in self.cstate.item_areas.iter() {
+            Clear.render(*area, buf);
+        }
         popup.render(layout.status_dropdown, buf, &mut self.cstate);
         widget.render(binner, buf, &mut self.cstate);
         text_input.render(layout.text_search, buf, &mut self.search_state);
