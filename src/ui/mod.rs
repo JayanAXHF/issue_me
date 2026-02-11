@@ -20,7 +20,7 @@ use crate::{
     },
 };
 use crossterm::{
-    event::{EventStream, KeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
+    event::{EventStream, KeyEvent, KeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
     execute,
 };
 use futures::{StreamExt, future::FutureExt};
@@ -249,6 +249,17 @@ impl App {
     }
     #[instrument(skip(self))]
     async fn handle_event(&mut self, event: &crossterm::event::Event) -> Result<(), AppError> {
+        use crossterm::event::Event::Key;
+        use crossterm::event::KeyCode::*;
+        use rat_widget::event::ct_event;
+        if matches!(
+            event,
+            ct_event!(key press CONTROL-'c') | ct_event!(key press CONTROL-'q')
+        ) {
+            self.cancel_action.cancel();
+            return Ok(());
+        }
+
         let capture_focus = self
             .components
             .iter()
@@ -257,14 +268,14 @@ impl App {
         let outcome = focus.handle(event, Regular);
         info!(outcome = ?outcome, "Focus");
         if let Outcome::Continue = outcome
-            && let crossterm::event::Event::Key(key) = event
+            && let Key(key) = event
             && !capture_focus
         {
             self.handle_key(key).await?;
         }
-        if let crossterm::event::Event::Key(key) = event {
+        if let Key(key) = event {
             match key.code {
-                crossterm::event::KeyCode::Char(char)
+                Char(char)
                     if ('1'..'5').contains(&char)
                         && !self
                             .components
@@ -289,7 +300,17 @@ impl App {
         Ok(())
     }
     async fn handle_key(&mut self, key: &crossterm::event::KeyEvent) -> Result<(), AppError> {
-        if matches!(key.code, crossterm::event::KeyCode::Char('q')) {
+        use crossterm::event::KeyCode::*;
+        if matches!(key.code, Char('q'))
+            | matches!(
+                key,
+                KeyEvent {
+                    code: Char('c' | 'q'),
+                    modifiers: crossterm::event::KeyModifiers::CONTROL,
+                    ..
+                }
+            )
+        {
             self.cancel_action.cancel();
         }
 
