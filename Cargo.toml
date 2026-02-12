@@ -26,3 +26,9 @@ tokio-util = "0.7.18"
 tracing = "0.1.44"
 tracing-error = "0.2.1"
 tracing-subscriber = "0.3.22"
+
+[profile.release]
+codegen-units = 1 # Allows compiler to perform better optimization.
+lto = "fat" # Enables Link-time Optimization.
+opt-level = "z" # Prioritizes small binary size. Use `3` if you prefer speed.
+strip = true # Ensures debug symbols are removed.
