@@ -1,8 +1,8 @@
 use rat_widget::statusline_stacked::StatusLineStacked;
 use ratatui::buffer::Buffer;
-use ratatui::style::Style;
+use ratatui::style::{Style, Stylize};
 use ratatui::widgets::Widget;
-use ratatui_macros::span;
+use ratatui_macros::{line, span};
 use std::sync::atomic::Ordering;
 
 use crate::ui::components::DumbComponent;
@@ -18,7 +18,7 @@ impl StatusBar {
     pub fn new(app_state: AppState) -> Self {
         Self {
             repo_label: format!(" {}/{} ", app_state.owner, app_state.repo),
-            user_label: format!(" Logged in as {} ", app_state.current_user),
+            user_label: app_state.current_user,
         }
     }
 
@@ -26,14 +26,58 @@ impl StatusBar {
         let issue_count = LOADED_ISSUE_COUNT.load(Ordering::Relaxed);
         let count_text = format!(" Issues: {} ", issue_count);
 
-        StatusLineStacked::new()
+        let label = &self.user_label;
+        let mut ss = StatusLineStacked::new()
             .start(
-                span!(self.user_label.as_str()).style(Style::new().black().on_green()),
+                line![
+                    span!(" Logged in as").style(Style::new().black().on_green()),
+                    span!(" ").style(Style::new().black().on_green()),
+                    span!(label).bold().black().on_green(),
+                    span!(" ").style(Style::new().black().on_green()),
+                ],
                 " ",
             )
             .start(span!(self.repo_label.as_str()).style(Style::new()), " ")
-            .end(span!(count_text).style(Style::new().black().on_blue()), " ")
-            .render(area.status_bar, buf);
+            .end(span!(count_text).style(Style::new().black().on_blue()), "")
+            .end(
+                line![
+                    span!("q/<C-q>/<C-c").magenta(),
+                    " ",
+                    span!(" QUIT ").black().on_magenta().bold()
+                ],
+                " ",
+            )
+            .end(
+                line![
+                    span!("?").magenta(),
+                    " ",
+                    span!(" HELP ").black().on_magenta().bold()
+                ],
+                " ",
+            );
+        #[cfg(target_os = "macos")]
+        {
+            ss = ss.end(
+                line![
+                    span!("<C-H>").magenta(),
+                    " ",
+                    span!(" GLOBAL HELP ").black().on_magenta().bold()
+                ],
+                " ",
+            );
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            ss = ss.end(
+                line![
+                    span!("<C-h>").magenta(),
+                    " ",
+                    span!(" GLOBAL HELP ").black().on_magenta().bold()
+                ],
+                " ",
+            );
+        }
+        ss.render(area.status_bar, buf);
     }
 }
 
