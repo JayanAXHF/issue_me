@@ -1059,6 +1059,11 @@ impl Component for IssueConversation {
                         self.reaction_mode = None;
                     }
                     MainScreen::Details => {}
+                    MainScreen::CreateIssue => {
+                        self.input_state.focus.set(false);
+                        self.list_state.focus.set(false);
+                        self.reaction_mode = None;
+                    }
                 }
             }
             Action::Tick => {
@@ -1325,7 +1330,7 @@ fn truncate_preview(input: &str, max_width: usize) -> String {
     out
 }
 
-fn render_markdown_lines(text: &str, width: usize, indent: usize) -> Vec<Line<'static>> {
+pub(crate) fn render_markdown_lines(text: &str, width: usize, indent: usize) -> Vec<Line<'static>> {
     let mut renderer = MarkdownRenderer::new(width, indent);
     let parser = Parser::new_ext(text, Options::ENABLE_STRIKETHROUGH | Options::ENABLE_GFM);
     for event in parser {

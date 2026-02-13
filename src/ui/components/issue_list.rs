@@ -45,6 +45,7 @@ pub const HELP: &str = "\
 Enter: View Issue Details
 a: Add Assignee(s)
 A: Remove Assignee(s)
+n: Create New Issue
 ";
 pub struct IssueList<'a> {
     pub issues: Vec<IssueListItem>,
@@ -92,6 +93,7 @@ pub enum MainScreen {
     #[default]
     List,
     Details,
+    CreateIssue,
 }
 
 impl<'a> IssueList<'a> {
@@ -322,6 +324,21 @@ impl Component for IssueList<'_> {
                     self.list_state.focus.set(false);
                     return;
                 }
+                if matches!(event, ct_event!(key press 'n')) && self.list_state.is_focused() {
+                    self.action_tx
+                        .as_ref()
+                        .unwrap()
+                        .send(crate::ui::Action::EnterIssueCreate)
+                        .await
+                        .unwrap();
+                    self.action_tx
+                        .as_ref()
+                        .unwrap()
+                        .send(crate::ui::Action::ChangeIssueScreen(MainScreen::CreateIssue))
+                        .await
+                        .unwrap();
+                    return;
+                }
                 if matches!(event, ct_event!(keycode press Esc))
                     && self.inner_state == IssueListState::AssigningInput
                 {
@@ -495,6 +512,8 @@ impl Component for IssueList<'_> {
                 self.screen = screen;
                 if screen == MainScreen::List {
                     self.list_state.focus.set(true);
+                } else {
+                    self.list_state.focus.set(false);
                 }
             }
             _ => {}

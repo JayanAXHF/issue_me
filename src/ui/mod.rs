@@ -11,6 +11,7 @@ use crate::{
     errors::AppError,
     ui::components::{
         Component, DumbComponent,
+        issue_create::IssueCreate,
         issue_conversation::IssueConversation,
         issue_detail::IssuePreview,
         issue_list::{IssueList, MainScreen},
@@ -64,6 +65,7 @@ Global Help:\n\
 - Press '3' to focus Issue Conversation\n\
 - Press '4' to focus Label List\n\
 - Press '5' to focus Issue Preview\n\
+- Press '6' to focus Issue Create\n\
 - Press 'q' or 'Ctrl+C' to quit the application\n\
 - Press '?' or 'Ctrl+H' to toggle this help menu\n\
 \n\
@@ -150,17 +152,20 @@ impl App {
         let mut label_list = LabelList::new(state.clone());
         let mut issue_preview = IssuePreview::new(state.clone());
         let mut issue_conversation = IssueConversation::new(state.clone());
+        let mut issue_create = IssueCreate::new(state.clone());
         let issue_handler = GITHUB_CLIENT
             .get()
             .unwrap()
             .inner()
             .issues(state.owner.clone(), state.repo.clone());
         let mut issue_list =
-            IssueList::new(issue_handler, state.owner, state.repo, action_tx.clone()).await;
+            IssueList::new(issue_handler, state.owner.clone(), state.repo.clone(), action_tx.clone())
+                .await;
 
         let comps = define_cid_map!(
              2 -> issue_list,
              3 -> issue_conversation,
+             6 -> issue_create,
              4 -> label_list,
              5 -> issue_preview,
              1 -> text_search, // this needs to be the last one
@@ -317,7 +322,7 @@ impl App {
         if let Key(key) = event {
             match key.code {
                 Char(char)
-                    if ('1'..'5').contains(&char)
+                    if ('1'..='6').contains(&char)
                         && !self
                             .components
                             .iter()
@@ -463,6 +468,13 @@ pub enum Action {
     },
     IssueCommentPostError {
         number: u64,
+        message: String,
+    },
+    EnterIssueCreate,
+    IssueCreateSuccess {
+        issue: Issue,
+    },
+    IssueCreateError {
         message: String,
     },
     IssueLabelsUpdated {
