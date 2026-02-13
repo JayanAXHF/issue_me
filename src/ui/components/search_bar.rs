@@ -19,6 +19,7 @@ use tracing::instrument;
 
 use crate::{
     app::GITHUB_CLIENT,
+    errors::AppError,
     ui::{
         Action, AppState, MergeStrategy,
         components::Component,
@@ -162,8 +163,12 @@ impl TextSearch {
                 .await?;
             action_tx
                 .send(Action::NewPage(Arc::new(page), MergeStrategy::Replace))
-                .await?;
-            action_tx.send(Action::FinishedLoading).await?;
+                .await
+                .map_err(|_| AppError::TokioMpsc)?;
+            action_tx
+                .send(Action::FinishedLoading)
+                .await
+                .map_err(|_| AppError::TokioMpsc)?;
             Ok::<(), crate::errors::AppError>(())
         });
     }

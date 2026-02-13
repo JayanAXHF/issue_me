@@ -14,8 +14,8 @@ pub enum AppError {
     Join(#[from] tokio::task::JoinError),
     #[error(transparent)]
     Inquire(#[from] inquire::error::InquireError),
-    #[error(transparent)]
-    TokioMpsc(#[from] tokio::sync::mpsc::error::SendError<crate::ui::Action>),
+    #[error("error sending message on channel")]
+    TokioMpsc,
     #[error(transparent)]
     InitLoggingError(#[from] tracing_subscriber::util::TryInitError),
     #[error("error setting global {0}")]
