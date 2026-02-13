@@ -12,10 +12,14 @@ pub struct Cli {
 
 #[derive(clap::Args, Clone)]
 pub struct Args {
-    pub owner: String,
-    pub repo: String,
+    #[clap(required_unless_present = "print_log_dir")]
+    pub owner: Option<String>,
+    #[clap(required_unless_present = "print_log_dir")]
+    pub repo: Option<String>,
     #[clap(long, short, default_value_t = LogLevel::Info)]
     pub log_level: LogLevel,
+    #[clap(long, short)]
+    pub print_log_dir: bool,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]

@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 pub struct App {
     pub owner: String,
     pub repo: String,
+    pub print_log_dir: bool,
 }
 
 pub static GITHUB_CLIENT: OnceLock<GithubClient> = OnceLock::new();
@@ -27,13 +28,18 @@ impl App {
         let github = GithubClient::new(Some(token))?;
         let _ = GITHUB_CLIENT.set(github);
         Ok(Self {
-            owner: cli.args.owner,
-            repo: cli.args.repo,
+            owner: cli.args.owner.unwrap_or_default(),
+            repo: cli.args.repo.unwrap_or_default(),
+            print_log_dir: cli.args.print_log_dir,
         })
     }
 
     pub async fn run(&mut self) -> Result<(), AppError> {
         use crate::ui::AppState;
+        if self.print_log_dir {
+            println!("Log directory: {}", logging::get_data_dir().display());
+            return Ok(());
+        }
         let current_user = GITHUB_CLIENT
             .get()
             .unwrap()
