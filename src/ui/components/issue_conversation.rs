@@ -1246,18 +1246,31 @@ fn reaction_add_options() -> [ReactionContent; 8] {
 
 fn format_reaction_picker(selected: usize, options: &[ReactionContent]) -> String {
     let mut out = String::new();
+    let mut bracket_start = None;
+    let mut bracket_end = None;
+    const TOTAL_WIDTH: usize = 20;
     for (idx, content) in options.iter().enumerate() {
         if idx > 0 {
             out.push(' ');
         }
         let label = reaction_label(content);
         if idx == selected {
+            bracket_start = Some(out.len());
             out.push('[');
             out.push_str(label);
+            bracket_end = Some(out.len());
             out.push(']');
         } else {
             out.push_str(label);
         }
+    }
+    if let (Some(start), Some(end)) = (bracket_start, bracket_end) {
+        let padding = TOTAL_WIDTH.saturating_sub(end - start + 1);
+        let left_padding = padding / 2;
+        let left_start = start.saturating_sub(left_padding);
+        let right_padding = padding - left_padding;
+        let right_end = (end + right_padding).min(out.len());
+        return out[left_start..right_end].to_string();
     }
     out
 }
