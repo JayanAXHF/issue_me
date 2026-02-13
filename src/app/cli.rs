@@ -1,4 +1,7 @@
+use std::{fmt::Display, str::FromStr};
+
 use clap::Parser;
+use tracing_subscriber::filter::{self, Directive};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -11,4 +14,37 @@ pub struct Cli {
 pub struct Args {
     pub owner: String,
     pub repo: String,
+    #[clap(long, short, default_value_t = LogLevel::Info)]
+    pub log_level: LogLevel,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    None,
+}
+
+impl Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            LogLevel::Trace => "trace",
+            LogLevel::Debug => "debug",
+            LogLevel::Info => "info",
+            LogLevel::Warn => "warn",
+            LogLevel::Error => "error",
+            LogLevel::None => "none",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl TryFrom<LogLevel> for Directive {
+    type Error = filter::ParseError;
+    fn try_from(value: LogLevel) -> Result<Self, Self::Error> {
+        Directive::from_str(&value.to_string())
+    }
 }

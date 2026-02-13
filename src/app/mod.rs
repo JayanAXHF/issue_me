@@ -4,6 +4,7 @@ use inquire::Password;
 use crate::auth::AuthProvider;
 use crate::errors::AppError;
 use crate::github::GithubClient;
+use crate::logging::LoggingConfig;
 use crate::{logging, ui};
 use std::sync::OnceLock;
 
@@ -17,7 +18,7 @@ pub static GITHUB_CLIENT: OnceLock<GithubClient> = OnceLock::new();
 impl App {
     pub async fn new() -> Result<Self, AppError> {
         let cli = cli::Cli::parse();
-        logging::init()?;
+        logging::init(LoggingConfig::new(cli.args.log_level))?;
         let mut auth = crate::auth::keyring::KeyringAuth::new("issue_me")?;
         let token = match auth.get_token().ok() {
             Some(token) => token,
