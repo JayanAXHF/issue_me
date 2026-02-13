@@ -11,8 +11,8 @@ use crate::{
     errors::AppError,
     ui::components::{
         Component, DumbComponent,
-        issue_create::IssueCreate,
         issue_conversation::IssueConversation,
+        issue_create::IssueCreate,
         issue_detail::IssuePreview,
         issue_list::{IssueList, MainScreen},
         label_list::LabelList,
@@ -158,9 +158,13 @@ impl App {
             .unwrap()
             .inner()
             .issues(state.owner.clone(), state.repo.clone());
-        let mut issue_list =
-            IssueList::new(issue_handler, state.owner.clone(), state.repo.clone(), action_tx.clone())
-                .await;
+        let mut issue_list = IssueList::new(
+            issue_handler,
+            state.owner.clone(),
+            state.repo.clone(),
+            action_tx.clone(),
+        )
+        .await;
 
         let comps = define_cid_map!(
              2 -> issue_list,
@@ -472,7 +476,7 @@ pub enum Action {
     },
     EnterIssueCreate,
     IssueCreateSuccess {
-        issue: Issue,
+        issue: Box<Issue>,
     },
     IssueCreateError {
         message: String,

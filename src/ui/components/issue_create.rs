@@ -192,7 +192,11 @@ impl IssueCreate {
 
             match create.send().await {
                 Ok(issue) => {
-                    let _ = action_tx.send(Action::IssueCreateSuccess { issue }).await;
+                    let _ = action_tx
+                        .send(Action::IssueCreateSuccess {
+                            issue: Box::new(issue),
+                        })
+                        .await;
                 }
                 Err(err) => {
                     let _ = action_tx
@@ -410,7 +414,7 @@ impl Component for IssueCreate {
             }
             Action::IssueCreateSuccess { issue } => {
                 if self.screen == MainScreen::CreateIssue {
-                    self.handle_create_success(issue).await;
+                    self.handle_create_success(*issue).await;
                 }
             }
             Action::IssueCreateError { message } => {
