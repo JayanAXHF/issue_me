@@ -42,6 +42,8 @@ Issue Conversation Help:\n\
 - Up/Down: select issue body/comment entry\n\
 - PageUp/PageDown/Home/End: scroll message body pane\n\
 - Ctrl+P: toggle comment input/preview\n\
+- r: add reaction to selected comment\n\
+- R: remove reaction from selected comment\n\
 - Ctrl+Enter or Alt+Enter: send comment\n\
 - Esc: return to issue list screen\n\
 ";
@@ -72,6 +74,7 @@ pub struct CommentView {
     pub created_at: Arc<str>,
     pub body: Arc<str>,
     pub reactions: Option<Vec<(ReactionContent, u64)>>,
+    pub my_reactions: Option<Vec<ReactionContent>>,
 }
 
 impl CommentView {
@@ -83,6 +86,7 @@ impl CommentView {
             created_at: Arc::<str>::from(comment.created_at.format("%Y-%m-%d %H:%M").to_string()),
             body: Arc::<str>::from(body),
             reactions: None,
+            my_reactions: None,
         }
     }
 }
@@ -100,6 +104,7 @@ pub struct IssueConversation {
     posting: bool,
     error: Option<String>,
     post_error: Option<String>,
+    reaction_error: Option<String>,
     owner: String,
     repo: String,
     current_user: String,
@@ -114,6 +119,7 @@ pub struct IssueConversation {
     textbox_state: InputState,
     paragraph_state: ParagraphState,
     body_paragraph_state: ParagraphState,
+    reaction_mode: Option<ReactionMode>,
     index: usize,
 }
 
@@ -128,6 +134,19 @@ enum InputState {
 enum MessageKey {
     IssueBody(u64),
     Comment(u64),
+}
+
+#[derive(Debug, Clone)]
+enum ReactionMode {
+    Add {
+        comment_id: u64,
+        selected: usize,
+    },
+    Remove {
+        comment_id: u64,
+        selected: usize,
+        options: Vec<ReactionContent>,
+    },
 }
 
 impl InputState {
@@ -155,6 +174,7 @@ impl IssueConversation {
             posting: false,
             error: None,
             post_error: None,
+            reaction_error: None,
             owner: app_state.owner,
             repo: app_state.repo,
             current_user: app_state.current_user,
@@ -168,6 +188,7 @@ impl IssueConversation {
             focus: FocusFlag::new().with_name("issue_conversation"),
             area: Rect::default(),
             body_paragraph_state: ParagraphState::default(),
+            reaction_mode: None,
             index: 0,
         }
     }
@@ -188,7 +209,15 @@ impl IssueConversation {
             .border_style(get_border_style(&self.list_state));
 
         if !self.is_loading_current() {
-            list_block = list_block.title(format!("[{}] Conversation", self.index));
+            let mut title = format!("[{}] Conversation", self.index);
+            if let Some(prompt) = self.reaction_mode_prompt() {
+                title.push_str(" | ");
+                title.push_str(&prompt);
+            } else if let Some(err) = &self.reaction_error {
+                title.push_str(" | ");
+                title.push_str(err);
+            }
+            list_block = list_block.title(title);
         }
 
         let list = rat_widget::list::List::<RowSelection>::new(items)
@@ -392,10 +421,309 @@ impl IssueConversation {
         }
     }
 
+    fn selected_comment_id(&self) -> Option<u64> {
+        let selected = self.list_state.selected_checked()?;
+        match self.message_keys.get(selected)? {
+            MessageKey::Comment(id) => Some(*id),
+            MessageKey::IssueBody(_) => None,
+        }
+    }
+
+    fn selected_comment(&self) -> Option<&CommentView> {
+        let id = self.selected_comment_id()?;
+        self.cache_comments.iter().find(|c| c.id == id)
+    }
+
+    fn reaction_mode_prompt(&self) -> Option<String> {
+        let mode = self.reaction_mode.as_ref()?;
+        match mode {
+            ReactionMode::Add { selected, .. } => Some(format!(
+                "Add reaction: {}",
+                format_reaction_picker(*selected, &reaction_add_options())
+            )),
+            ReactionMode::Remove {
+                selected, options, ..
+            } => Some(format!(
+                "Remove reaction: {}",
+                format_reaction_picker(*selected, options)
+            )),
+        }
+    }
+
+    fn start_add_reaction_mode(&mut self) {
+        let Some(comment_id) = self.selected_comment_id() else {
+            self.reaction_error = Some("Select a comment to add a reaction.".to_string());
+            return;
+        };
+        self.reaction_error = None;
+        self.reaction_mode = Some(ReactionMode::Add {
+            comment_id,
+            selected: 0,
+        });
+    }
+
+    fn start_remove_reaction_mode(&mut self) {
+        let Some(comment) = self.selected_comment() else {
+            self.reaction_error = Some("Select a comment to remove a reaction.".to_string());
+            return;
+        };
+        let comment_id = comment.id;
+        let mut options = comment.my_reactions.as_ref().cloned().unwrap_or_default();
+
+        options.sort_by_key(reaction_order);
+        options.dedup();
+        if options.is_empty() {
+            self.reaction_error = Some("No reactions available to remove.".to_string());
+            return;
+        }
+        self.reaction_error = None;
+        self.reaction_mode = Some(ReactionMode::Remove {
+            comment_id,
+            selected: 0,
+            options,
+        });
+    }
+
+    async fn handle_reaction_mode_event(&mut self, event: &event::Event) -> bool {
+        let Some(mode) = &mut self.reaction_mode else {
+            return false;
+        };
+
+        let mut submit: Option<(u64, ReactionContent, bool)> = None;
+        match event {
+            ct_event!(keycode press Esc) => {
+                self.reaction_mode = None;
+                return true;
+            }
+            ct_event!(keycode press Up) => match mode {
+                ReactionMode::Add { selected, .. } => {
+                    let len = reaction_add_options().len();
+                    if len > 0 {
+                        *selected = if *selected == 0 {
+                            len - 1
+                        } else {
+                            *selected - 1
+                        };
+                    }
+                    return true;
+                }
+                ReactionMode::Remove {
+                    selected, options, ..
+                } => {
+                    let len = options.len();
+                    if len > 0 {
+                        *selected = if *selected == 0 {
+                            len - 1
+                        } else {
+                            *selected - 1
+                        };
+                    }
+                    return true;
+                }
+            },
+            ct_event!(keycode press Down) => match mode {
+                ReactionMode::Add { selected, .. } => {
+                    let len = reaction_add_options().len();
+                    if len > 0 {
+                        *selected = (*selected + 1) % len;
+                    }
+                    return true;
+                }
+                ReactionMode::Remove {
+                    selected, options, ..
+                } => {
+                    let len = options.len();
+                    if len > 0 {
+                        *selected = (*selected + 1) % len;
+                    }
+                    return true;
+                }
+            },
+            ct_event!(keycode press Enter) => match mode {
+                ReactionMode::Add {
+                    comment_id,
+                    selected,
+                } => {
+                    let options = reaction_add_options();
+                    if let Some(content) = options.get(*selected).cloned() {
+                        submit = Some((*comment_id, content, true));
+                    }
+                }
+                ReactionMode::Remove {
+                    comment_id,
+                    selected,
+                    options,
+                } => {
+                    if let Some(content) = options.get(*selected).cloned() {
+                        submit = Some((*comment_id, content, false));
+                    }
+                }
+            },
+            _ => return false,
+        }
+
+        if let Some((comment_id, content, add)) = submit {
+            self.reaction_mode = None;
+            self.reaction_error = None;
+            if add {
+                self.add_reaction(comment_id, content).await;
+            } else {
+                self.remove_reaction(comment_id, content).await;
+            }
+            return true;
+        }
+        true
+    }
+
     fn is_loading_current(&self) -> bool {
         self.current
             .as_ref()
             .is_some_and(|seed| self.loading.contains(&seed.number))
+    }
+
+    async fn add_reaction(&mut self, comment_id: u64, content: ReactionContent) {
+        let Some(action_tx) = self.action_tx.clone() else {
+            return;
+        };
+        let owner = self.owner.clone();
+        let repo = self.repo.clone();
+        let current_user = self.current_user.clone();
+        tokio::spawn(async move {
+            let Some(client) = GITHUB_CLIENT.get() else {
+                let _ = action_tx
+                    .send(Action::IssueReactionEditError {
+                        comment_id,
+                        message: "GitHub client not initialized.".to_string(),
+                    })
+                    .await;
+                return;
+            };
+            let handler = client.inner().issues(owner, repo);
+            if let Err(err) = handler.create_comment_reaction(comment_id, content).await {
+                let _ = action_tx
+                    .send(Action::IssueReactionEditError {
+                        comment_id,
+                        message: err.to_string().replace('\n', " "),
+                    })
+                    .await;
+                return;
+            }
+
+            match handler.list_comment_reactions(comment_id).send().await {
+                Ok(mut page) => {
+                    let (counts, mine) =
+                        to_reaction_snapshot(std::mem::take(&mut page.items), &current_user);
+                    let mut reactions = HashMap::new();
+                    let mut own_reactions = HashMap::new();
+                    reactions.insert(comment_id, counts);
+                    own_reactions.insert(comment_id, mine);
+                    let _ = action_tx
+                        .send(Action::IssueReactionsLoaded {
+                            reactions,
+                            own_reactions,
+                        })
+                        .await;
+                }
+                Err(err) => {
+                    let _ = action_tx
+                        .send(Action::IssueReactionEditError {
+                            comment_id,
+                            message: err.to_string().replace('\n', " "),
+                        })
+                        .await;
+                }
+            }
+        });
+    }
+
+    async fn remove_reaction(&mut self, comment_id: u64, content: ReactionContent) {
+        let Some(action_tx) = self.action_tx.clone() else {
+            return;
+        };
+        let owner = self.owner.clone();
+        let repo = self.repo.clone();
+        let current_user = self.current_user.clone();
+        tokio::spawn(async move {
+            let Some(client) = GITHUB_CLIENT.get() else {
+                let _ = action_tx
+                    .send(Action::IssueReactionEditError {
+                        comment_id,
+                        message: "GitHub client not initialized.".to_string(),
+                    })
+                    .await;
+                return;
+            };
+            let handler = client.inner().issues(owner, repo);
+            match handler.list_comment_reactions(comment_id).send().await {
+                Ok(mut page) => {
+                    let mut items = std::mem::take(&mut page.items);
+                    let to_delete = items
+                        .iter()
+                        .find(|reaction| {
+                            reaction.content == content
+                                && reaction.user.login.eq_ignore_ascii_case(&current_user)
+                        })
+                        .map(|reaction| reaction.id);
+
+                    let Some(reaction_id) = to_delete else {
+                        let _ = action_tx
+                            .send(Action::IssueReactionEditError {
+                                comment_id,
+                                message: "No matching reaction from current user.".to_string(),
+                            })
+                            .await;
+                        return;
+                    };
+
+                    if let Err(err) = handler
+                        .delete_comment_reaction(comment_id, reaction_id)
+                        .await
+                    {
+                        let _ = action_tx
+                            .send(Action::IssueReactionEditError {
+                                comment_id,
+                                message: err.to_string().replace('\n', " "),
+                            })
+                            .await;
+                        return;
+                    }
+
+                    let mut removed = false;
+                    let (counts, mine) = to_reaction_snapshot(
+                        items.drain(..).filter_map(|reaction| {
+                            if !removed
+                                && reaction.content == content
+                                && reaction.user.login.eq_ignore_ascii_case(&current_user)
+                            {
+                                removed = true;
+                                None
+                            } else {
+                                Some(reaction)
+                            }
+                        }),
+                        &current_user,
+                    );
+                    let mut reactions = HashMap::new();
+                    let mut own_reactions = HashMap::new();
+                    reactions.insert(comment_id, counts);
+                    own_reactions.insert(comment_id, mine);
+                    let _ = action_tx
+                        .send(Action::IssueReactionsLoaded {
+                            reactions,
+                            own_reactions,
+                        })
+                        .await;
+                }
+                Err(err) => {
+                    let _ = action_tx
+                        .send(Action::IssueReactionEditError {
+                            comment_id,
+                            message: err.to_string().replace('\n', " "),
+                        })
+                        .await;
+                }
+            }
+        });
     }
 
     async fn fetch_comments(&mut self, number: u64) {
@@ -407,6 +735,7 @@ impl IssueConversation {
         };
         let owner = self.owner.clone();
         let repo = self.repo.clone();
+        let current_user = self.current_user.clone();
         self.loading.insert(number);
         self.error = None;
 
@@ -439,22 +768,35 @@ impl IssueConversation {
                         .send(Action::IssueCommentsLoaded { number, comments })
                         .await;
                     let refer = &handler;
-                    let reactions = stream::iter(comment_ids)
-                        .filter_map(|id| async move {
-                            let reactions = refer.list_comment_reactions(id).send().await;
-                            let reaction_content = reactions.ok()?.items.into_iter().fold(
-                                HashMap::new(),
-                                |mut acc, reaction| {
-                                    *acc.entry(reaction.content).or_insert(0) += 1_u64;
-                                    acc
-                                },
-                            );
-                            Some((id, reaction_content.into_iter().collect::<Vec<_>>()))
+                    let current_user = current_user.clone();
+                    let reaction_snapshots = stream::iter(comment_ids)
+                        .filter_map(|id| {
+                            let current_user = current_user.clone();
+                            async move {
+                                let reactions = refer.list_comment_reactions(id).send().await;
+                                let mut page = reactions.ok()?;
+                                Some((
+                                    id,
+                                    to_reaction_snapshot(
+                                        std::mem::take(&mut page.items),
+                                        &current_user,
+                                    ),
+                                ))
+                            }
                         })
                         .collect::<HashMap<_, _>>()
                         .await;
+                    let mut reactions = HashMap::with_capacity(reaction_snapshots.len());
+                    let mut own_reactions = HashMap::with_capacity(reaction_snapshots.len());
+                    for (id, (counts, mine)) in reaction_snapshots {
+                        reactions.insert(id, counts);
+                        own_reactions.insert(id, mine);
+                    }
                     let _ = action_tx
-                        .send(Action::IssueReactionsLoaded { reactions })
+                        .send(Action::IssueReactionsLoaded {
+                            reactions,
+                            own_reactions,
+                        })
                         .await;
                 }
                 Err(err) => {
@@ -527,8 +869,26 @@ impl Component for IssueConversation {
                 if self.screen != MainScreen::Details {
                     return;
                 }
+                if self.handle_reaction_mode_event(event).await {
+                    return;
+                }
 
                 match event {
+                    event::Event::Key(key)
+                        if key.code == event::KeyCode::Char('r')
+                            && key.modifiers == event::KeyModifiers::NONE
+                            && self.list_state.is_focused() =>
+                    {
+                        self.start_add_reaction_mode();
+                        return;
+                    }
+                    event::Event::Key(key)
+                        if key.code == event::KeyCode::Char('R')
+                            && self.list_state.is_focused() =>
+                    {
+                        self.start_remove_reaction_mode();
+                        return;
+                    }
                     ct_event!(keycode press Tab) | ct_event!(keycode press SHIFT-Tab)
                         if self.input_state.is_focused() =>
                     {
@@ -610,6 +970,8 @@ impl Component for IssueConversation {
                 let number = seed.number;
                 self.current = Some(seed);
                 self.post_error = None;
+                self.reaction_error = None;
+                self.reaction_mode = None;
                 self.body_cache = None;
                 self.body_cache_number = Some(number);
                 self.body_paragraph_state.set_line_offset(0);
@@ -643,12 +1005,24 @@ impl Component for IssueConversation {
                         .unwrap();
                 }
             }
-            Action::IssueReactionsLoaded { reactions } => {
+            Action::IssueReactionsLoaded {
+                reactions,
+                own_reactions,
+            } => {
+                self.reaction_error = None;
                 for (id, reaction_content) in reactions {
                     if let Some(comment) = self.cache_comments.iter_mut().find(|c| c.id == id) {
                         comment.reactions = Some(reaction_content);
+                        comment.my_reactions =
+                            Some(own_reactions.get(&id).cloned().unwrap_or_else(Vec::new));
                     }
                 }
+            }
+            Action::IssueReactionEditError {
+                comment_id: _,
+                message,
+            } => {
+                self.reaction_error = Some(message);
             }
             Action::IssueCommentPosted { number, comment } => {
                 self.posting = false;
@@ -682,6 +1056,7 @@ impl Component for IssueConversation {
                     MainScreen::List => {
                         self.input_state.focus.set(false);
                         self.list_state.focus.set(false);
+                        self.reaction_mode = None;
                     }
                     MainScreen::Details => {}
                 }
@@ -854,6 +1229,59 @@ fn reaction_label(content: &ReactionContent) -> &'static str {
         ReactionContent::Eyes => "eyes",
         _ => "other",
     }
+}
+
+fn reaction_add_options() -> [ReactionContent; 8] {
+    [
+        ReactionContent::PlusOne,
+        ReactionContent::Heart,
+        ReactionContent::Hooray,
+        ReactionContent::Laugh,
+        ReactionContent::Rocket,
+        ReactionContent::Eyes,
+        ReactionContent::Confused,
+        ReactionContent::MinusOne,
+    ]
+}
+
+fn format_reaction_picker(selected: usize, options: &[ReactionContent]) -> String {
+    let mut out = String::new();
+    for (idx, content) in options.iter().enumerate() {
+        if idx > 0 {
+            out.push(' ');
+        }
+        let label = reaction_label(content);
+        if idx == selected {
+            out.push('[');
+            out.push_str(label);
+            out.push(']');
+        } else {
+            out.push_str(label);
+        }
+    }
+    out
+}
+
+fn to_reaction_snapshot<I>(
+    reactions: I,
+    current_user: &str,
+) -> (Vec<(ReactionContent, u64)>, Vec<ReactionContent>)
+where
+    I: IntoIterator<Item = octocrab::models::reactions::Reaction>,
+{
+    let mut mine = Vec::new();
+    let counts = reactions
+        .into_iter()
+        .fold(HashMap::new(), |mut acc, reaction| {
+            if reaction.user.login.eq_ignore_ascii_case(current_user) {
+                mine.push(reaction.content.clone());
+            }
+            *acc.entry(reaction.content).or_insert(0) += 1_u64;
+            acc
+        });
+    mine.sort_by_key(reaction_order);
+    mine.dedup();
+    (counts.into_iter().collect::<Vec<_>>(), mine)
 }
 
 fn extract_preview(lines: &[Line<'static>], preview_width: usize) -> String {

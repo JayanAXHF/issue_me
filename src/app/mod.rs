@@ -40,8 +40,7 @@ impl App {
             .current()
             .user()
             .await?
-            .name
-            .unwrap_or("N/A".to_string());
+            .login;
 
         let ap = AppState::new(self.repo.clone(), self.owner.clone(), current_user);
         ui::run(ap).await

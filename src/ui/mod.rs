@@ -447,6 +447,11 @@ pub enum Action {
     },
     IssueReactionsLoaded {
         reactions: HashMap<u64, Vec<(ReactionContent, u64)>>,
+        own_reactions: HashMap<u64, Vec<ReactionContent>>,
+    },
+    IssueReactionEditError {
+        comment_id: u64,
+        message: String,
     },
     IssueCommentPosted {
         number: u64,
