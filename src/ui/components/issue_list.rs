@@ -2,7 +2,7 @@ use crate::{
     app::GITHUB_CLIENT,
     errors::AppError,
     ui::{
-        Action,
+        Action, MergeStrategy,
         components::{
             Component, issue_conversation::IssueConversationSeed, issue_detail::IssuePreviewSeed,
         },
@@ -96,7 +96,9 @@ impl<'a> IssueList<'a> {
                 .collect();
             p.items = items;
 
-            tx.send(Action::NewPage(Arc::new(p))).await.unwrap();
+            tx.send(Action::NewPage(Arc::new(p), MergeStrategy::Append))
+                .await
+                .unwrap();
         });
         Self {
             page: None,
@@ -263,7 +265,11 @@ impl Component for IssueList<'_> {
                                         .filter(|i| i.pull_request.is_none())
                                         .collect();
                                     p.items = items;
-                                    tx.send(crate::ui::Action::NewPage(Arc::new(p))).await?;
+                                    tx.send(crate::ui::Action::NewPage(
+                                        Arc::new(p),
+                                        MergeStrategy::Append,
+                                    ))
+                                    .await?;
                                 }
                                 tx.send(crate::ui::Action::FinishedLoading).await.unwrap();
                                 Ok::<(), AppError>(())
@@ -291,10 +297,16 @@ impl Component for IssueList<'_> {
                     }
                 }
             }
-            crate::ui::Action::NewPage(p) => {
+            crate::ui::Action::NewPage(p, merge_strat) => {
                 info!("New Page with {} issues", p.items.len());
-                self.issues
-                    .extend(p.items.iter().cloned().map(IssueListItem::from));
+                match merge_strat {
+                    MergeStrategy::Replace => {
+                        self.issues = p.items.iter().cloned().map(IssueListItem).collect()
+                    }
+                    MergeStrategy::Append => self
+                        .issues
+                        .extend(p.items.iter().cloned().map(IssueListItem)),
+                }
                 let count = self.issues.len().min(u32::MAX as usize) as u32;
                 LOADED_ISSUE_COUNT.store(count, Ordering::Relaxed);
                 self.page = Some(p);

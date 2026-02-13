@@ -20,7 +20,7 @@ use tracing::instrument;
 use crate::{
     app::GITHUB_CLIENT,
     ui::{
-        Action, AppState,
+        Action, AppState, MergeStrategy,
         components::Component,
         layout::Layout,
         utils::{get_border_style, get_loader_area},
@@ -154,11 +154,15 @@ impl TextSearch {
                 .unwrap()
                 .search()
                 .issues_and_pull_requests(&search)
+                .page(1)
+                .per_page(10)
                 .sort("created")
                 .order("desc")
                 .send()
                 .await?;
-            action_tx.send(Action::NewPage(Arc::new(page))).await?;
+            action_tx
+                .send(Action::NewPage(Arc::new(page), MergeStrategy::Replace))
+                .await?;
             action_tx.send(Action::FinishedLoading).await?;
             Ok::<(), crate::errors::AppError>(())
         });

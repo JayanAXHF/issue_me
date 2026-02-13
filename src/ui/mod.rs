@@ -421,7 +421,7 @@ pub enum Action {
     Tick,
     Quit,
     AppEvent(crossterm::event::Event),
-    NewPage(Arc<Page<Issue>>),
+    NewPage(Arc<Page<Issue>>, MergeStrategy),
     ForceRender,
     SelectedIssue {
         number: u64,
@@ -480,4 +480,10 @@ pub enum Action {
     ForceFocusChange,
     ForceFocusChangeRev,
     SetHelp(&'static str),
+}
+
+#[derive(Debug, Clone)]
+pub enum MergeStrategy {
+    Append,
+    Replace,
 }
