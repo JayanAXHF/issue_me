@@ -26,7 +26,7 @@ use crossterm::{
 use futures::{StreamExt, future::FutureExt};
 use octocrab::{
     Page,
-    models::{Label, issues::Issue},
+    models::{Label, issues::Issue, reactions::ReactionContent},
 };
 use rat_widget::{
     event::{HandleEvent, Outcome, Regular},
@@ -444,6 +444,9 @@ pub enum Action {
     IssueCommentsLoaded {
         number: u64,
         comments: Vec<CommentView>,
+    },
+    IssueReactionsLoaded {
+        reactions: HashMap<u64, Vec<(ReactionContent, u64)>>,
     },
     IssueCommentPosted {
         number: u64,

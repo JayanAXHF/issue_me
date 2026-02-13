@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use crossterm::event;
-use octocrab::models::issues::Comment as ApiComment;
+use futures::{StreamExt, stream};
+use octocrab::models::{issues::Comment as ApiComment, reactions::ReactionContent};
 use pulldown_cmark::{BlockQuoteKind, Event, Options, Parser, Tag, TagEnd};
 use rat_cursor::HasScreenCursor;
 use rat_widget::{
@@ -70,6 +71,7 @@ pub struct CommentView {
     pub author: Arc<str>,
     pub created_at: Arc<str>,
     pub body: Arc<str>,
+    pub reactions: Option<Vec<(ReactionContent, u64)>>,
 }
 
 impl CommentView {
@@ -80,6 +82,7 @@ impl CommentView {
             author: Arc::<str>::from(comment.user.login.as_str()),
             created_at: Arc::<str>::from(comment.created_at.format("%Y-%m-%d %H:%M").to_string()),
             body: Arc::<str>::from(body),
+            reactions: None,
         }
     }
 }
@@ -310,6 +313,7 @@ impl IssueConversation {
                 body_lines,
                 preview_width,
                 seed.author.as_ref() == self.current_user,
+                None,
             ));
             self.message_keys.push(MessageKey::IssueBody(seed.number));
         }
@@ -331,6 +335,7 @@ impl IssueConversation {
                     body_lines,
                     preview_width,
                     comment.author.as_ref() == self.current_user,
+                    comment.reactions.as_deref(),
                 ));
                 self.message_keys.push(MessageKey::Comment(comment.id));
             }
@@ -425,13 +430,31 @@ impl IssueConversation {
 
             match page {
                 Ok(mut p) => {
-                    let comments: Vec<CommentView> = std::mem::take(&mut p.items)
-                        .into_iter()
-                        .map(CommentView::from_api)
-                        .collect();
+                    let comments = std::mem::take(&mut p.items);
+                    let comment_ids = comments.iter().map(|c| c.id.0).collect::<Vec<_>>();
+                    let comments: Vec<CommentView> =
+                        comments.into_iter().map(CommentView::from_api).collect();
                     info!("Loaded {} comments for issue {}", comments.len(), number);
                     let _ = action_tx
                         .send(Action::IssueCommentsLoaded { number, comments })
+                        .await;
+                    let refer = &handler;
+                    let reactions = stream::iter(comment_ids)
+                        .filter_map(|id| async move {
+                            let reactions = refer.list_comment_reactions(id).send().await;
+                            let reaction_content = reactions.ok()?.items.into_iter().fold(
+                                HashMap::new(),
+                                |mut acc, reaction| {
+                                    *acc.entry(reaction.content).or_insert(0) += 1_u64;
+                                    acc
+                                },
+                            );
+                            Some((id, reaction_content.into_iter().collect::<Vec<_>>()))
+                        })
+                        .collect::<HashMap<_, _>>()
+                        .await;
+                    let _ = action_tx
+                        .send(Action::IssueReactionsLoaded { reactions })
                         .await;
                 }
                 Err(err) => {
@@ -620,6 +643,13 @@ impl Component for IssueConversation {
                         .unwrap();
                 }
             }
+            Action::IssueReactionsLoaded { reactions } => {
+                for (id, reaction_content) in reactions {
+                    if let Some(comment) = self.cache_comments.iter_mut().find(|c| c.id == id) {
+                        comment.reactions = Some(reaction_content);
+                    }
+                }
+            }
             Action::IssueCommentPosted { number, comment } => {
                 self.posting = false;
                 if self.current.as_ref().is_some_and(|s| s.number == number) {
@@ -742,6 +772,7 @@ fn build_comment_item(
     created_at: &str,
     preview: &str,
     is_self: bool,
+    reactions: Option<&[(ReactionContent, u64)]>,
 ) -> ListItem<'static> {
     let author_style = if is_self {
         Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)
@@ -757,7 +788,13 @@ fn build_comment_item(
         Span::raw("  "),
         Span::styled(preview.to_string(), Style::new().dim()),
     ]);
-    ListItem::new(vec![header, preview_line])
+    let mut lines = vec![header, preview_line];
+    if let Some(reactions) = reactions
+        && !reactions.is_empty()
+    {
+        lines.push(build_reactions_line(reactions));
+    }
+    ListItem::new(lines)
 }
 
 fn build_comment_preview_item(
@@ -766,9 +803,57 @@ fn build_comment_preview_item(
     body_lines: &[Line<'static>],
     preview_width: usize,
     is_self: bool,
+    reactions: Option<&[(ReactionContent, u64)]>,
 ) -> ListItem<'static> {
     let preview = extract_preview(body_lines, preview_width);
-    build_comment_item(author, created_at, &preview, is_self)
+    build_comment_item(author, created_at, &preview, is_self, reactions)
+}
+
+fn build_reactions_line(reactions: &[(ReactionContent, u64)]) -> Line<'static> {
+    let mut ordered = reactions.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|(content, _)| reaction_order(content));
+
+    let mut spans = vec![Span::raw("  ")];
+    for (idx, (content, count)) in ordered.into_iter().enumerate() {
+        if idx != 0 {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(
+            reaction_label(content).to_string(),
+            Style::new().fg(Color::Yellow),
+        ));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(count.to_string(), Style::new().dim()));
+    }
+    Line::from(spans)
+}
+
+fn reaction_order(content: &ReactionContent) -> usize {
+    match content {
+        ReactionContent::PlusOne => 0,
+        ReactionContent::Heart => 1,
+        ReactionContent::Hooray => 2,
+        ReactionContent::Laugh => 3,
+        ReactionContent::Rocket => 4,
+        ReactionContent::Eyes => 5,
+        ReactionContent::Confused => 6,
+        ReactionContent::MinusOne => 7,
+        _ => usize::MAX,
+    }
+}
+
+fn reaction_label(content: &ReactionContent) -> &'static str {
+    match content {
+        ReactionContent::PlusOne => "+1",
+        ReactionContent::MinusOne => "-1",
+        ReactionContent::Laugh => "laugh",
+        ReactionContent::Confused => "confused",
+        ReactionContent::Heart => "heart",
+        ReactionContent::Hooray => "hooray",
+        ReactionContent::Rocket => "rocket",
+        ReactionContent::Eyes => "eyes",
+        _ => "other",
+    }
 }
 
 fn extract_preview(lines: &[Line<'static>], preview_width: usize) -> String {
