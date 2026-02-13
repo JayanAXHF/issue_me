@@ -439,7 +439,8 @@ impl Component for IssueList<'_> {
                                         Arc::new(p),
                                         MergeStrategy::Append,
                                     ))
-                                    .await?;
+                                    .await
+                                    .map_err(|_| AppError::TokioMpsc)?;
                                 }
                                 tx.send(crate::ui::Action::FinishedLoading).await.unwrap();
                                 Ok::<(), AppError>(())
