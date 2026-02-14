@@ -23,7 +23,7 @@ use crate::{
     ui::{
         Action, AppState,
         components::{
-            Component,
+            Component, help::HelpElementKind,
             issue_conversation::{IssueConversationSeed, render_markdown_lines},
             issue_detail::IssuePreviewSeed,
             issue_list::MainScreen,
@@ -33,14 +33,14 @@ use crate::{
     },
 };
 
-pub const HELP: &str = "\
-Issue Create Help:\n\
-- n (from issue list): open new issue composer\n\
-- Tab / Shift+Tab: switch fields\n\
-- Ctrl+P: toggle body input and markdown preview\n\
-- Ctrl+Enter or Alt+Enter: create issue\n\
-- Esc: return to issue list\n\
-";
+pub const HELP: &[HelpElementKind] = &[
+    crate::help_text!("Issue Create Help"),
+    crate::help_keybind!("n", "open new issue composer (from issue list)"),
+    crate::help_keybind!("Tab / Shift+Tab", "switch fields"),
+    crate::help_keybind!("Ctrl+P", "toggle body input and markdown preview"),
+    crate::help_keybind!("Ctrl+Enter / Alt+Enter", "create issue"),
+    crate::help_keybind!("Esc", "return to issue list"),
+];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum InputMode {

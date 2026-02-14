@@ -22,20 +22,20 @@ use crate::{
     errors::AppError,
     ui::{
         Action, AppState, MergeStrategy,
-        components::{Component, issue_list::MainScreen},
+        components::{Component, help::HelpElementKind, issue_list::MainScreen},
         layout::Layout,
         utils::{get_border_style, get_loader_area},
     },
 };
 
 const OPTIONS: [&str; 3] = ["Open", "Closed", "All"];
-pub const HELP: &str = "\
-Search Bar Help:\n\
-- Type issue text in Search\n\
-- Type labels in Search Labels (separate multiple labels with ';')\n\
-- Use Tab / Shift+Tab to move between inputs and status selector\n\
-- Enter: run search\n\
-";
+pub const HELP: &[HelpElementKind] = &[
+    crate::help_text!("Search Bar Help"),
+    crate::help_keybind!("Type", "issue text in Search"),
+    crate::help_keybind!("Type", "labels in Search Labels (separate multiple with ';')"),
+    crate::help_keybind!("Tab / Shift+Tab", "move between inputs and status selector"),
+    crate::help_keybind!("Enter", "run search"),
+];
 
 pub struct TextSearch {
     search_state: rat_widget::text_input::TextInputState,
