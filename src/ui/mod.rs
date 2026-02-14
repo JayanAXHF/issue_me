@@ -491,6 +491,21 @@ pub enum Action {
     LabelEditError {
         message: String,
     },
+    LabelSearchPageAppend {
+        request_id: u64,
+        items: Vec<Label>,
+        scanned: u32,
+        matched: u32,
+    },
+    LabelSearchFinished {
+        request_id: u64,
+        scanned: u32,
+        matched: u32,
+    },
+    LabelSearchError {
+        request_id: u64,
+        message: String,
+    },
     ChangeIssueScreen(MainScreen),
     FinishedLoading,
     ForceFocusChange,

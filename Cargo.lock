@@ -1339,6 +1339,7 @@ dependencies = [
  "rat-widget",
  "ratatui",
  "ratatui-macros",
+ "regex",
  "termprofile",
  "textwrap",
  "thiserror 2.0.18",
