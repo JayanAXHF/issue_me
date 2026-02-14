@@ -111,9 +111,12 @@ impl<'a> IssueList<'a> {
                 .get()
                 .unwrap()
                 .inner()
-                .issues(owner_clone, repo_clone)
-                .list()
-                .page(1_u32)
+                .search()
+                .issues_and_pull_requests(&format!(
+                    "repo:{}/{} is:issue is:open",
+                    owner_clone, repo_clone
+                ))
+                .page(1u32)
                 .per_page(15u8)
                 .send()
                 .await
@@ -121,10 +124,6 @@ impl<'a> IssueList<'a> {
                 return;
             };
             let items = std::mem::take(&mut p.items);
-            let items = items
-                .into_iter()
-                .filter(|i| i.pull_request.is_none())
-                .collect();
             p.items = items;
 
             tx.send(Action::NewPage(Arc::new(p), MergeStrategy::Append))
@@ -334,7 +333,9 @@ impl Component for IssueList<'_> {
                     self.action_tx
                         .as_ref()
                         .unwrap()
-                        .send(crate::ui::Action::ChangeIssueScreen(MainScreen::CreateIssue))
+                        .send(crate::ui::Action::ChangeIssueScreen(
+                            MainScreen::CreateIssue,
+                        ))
                         .await
                         .unwrap();
                     return;
