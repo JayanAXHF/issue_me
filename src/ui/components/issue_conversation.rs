@@ -31,22 +31,22 @@ use crate::{
     app::GITHUB_CLIENT,
     ui::{
         Action,
-        components::{Component, issue_list::MainScreen},
+        components::{Component, help::HelpElementKind, issue_list::MainScreen},
         layout::Layout,
         utils::get_border_style,
     },
 };
 
-pub const HELP: &str = "\
-Issue Conversation Help:\n\
-- Up/Down: select issue body/comment entry\n\
-- PageUp/PageDown/Home/End: scroll message body pane\n\
-- Ctrl+P: toggle comment input/preview\n\
-- r: add reaction to selected comment\n\
-- R: remove reaction from selected comment\n\
-- Ctrl+Enter or Alt+Enter: send comment\n\
-- Esc: return to issue list screen\n\
-";
+pub const HELP: &[HelpElementKind] = &[
+    crate::help_text!("Issue Conversation Help"),
+    crate::help_keybind!("Up/Down", "select issue body/comment entry"),
+    crate::help_keybind!("PageUp/PageDown/Home/End", "scroll message body pane"),
+    crate::help_keybind!("Ctrl+P", "toggle comment input/preview"),
+    crate::help_keybind!("r", "add reaction to selected comment"),
+    crate::help_keybind!("R", "remove reaction from selected comment"),
+    crate::help_keybind!("Ctrl+Enter / Alt+Enter", "send comment"),
+    crate::help_keybind!("Esc", "return to issue list screen"),
+];
 
 #[derive(Debug, Clone)]
 pub struct IssueConversationSeed {

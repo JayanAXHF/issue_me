@@ -4,7 +4,8 @@ use crate::{
     ui::{
         Action, MergeStrategy,
         components::{
-            Component, issue_conversation::IssueConversationSeed, issue_detail::IssuePreviewSeed,
+            Component, help::HelpElementKind, issue_conversation::IssueConversationSeed,
+            issue_detail::IssuePreviewSeed,
         },
         layout::Layout,
         utils::get_border_style,
@@ -40,13 +41,14 @@ use tokio::sync::oneshot;
 use tracing::info;
 
 pub static LOADED_ISSUE_COUNT: AtomicU32 = AtomicU32::new(0);
-pub const HELP: &str = "\
-↑/↓: Navigate Issues
-Enter: View Issue Details
-a: Add Assignee(s)
-A: Remove Assignee(s)
-n: Create New Issue
-";
+pub const HELP: &[HelpElementKind] = &[
+    crate::help_text!("Issue List Help"),
+    crate::help_keybind!("Up/Down", "navigate issues"),
+    crate::help_keybind!("Enter", "view issue details"),
+    crate::help_keybind!("a", "add assignee(s)"),
+    crate::help_keybind!("A", "remove assignee(s)"),
+    crate::help_keybind!("n", "create new issue"),
+];
 pub struct IssueList<'a> {
     pub issues: Vec<IssueListItem>,
     pub page: Option<Arc<Page<Issue>>>,

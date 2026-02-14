@@ -13,13 +13,18 @@ use ratatui::{
 };
 use ratatui_macros::line;
 
-use crate::ui::{Action, AppState, components::Component, layout::Layout, utils::get_border_style};
+use crate::ui::{
+    Action, AppState,
+    components::{Component, help::HelpElementKind},
+    layout::Layout,
+    utils::get_border_style,
+};
 
-pub const HELP: &str = "\
-Issue Preview Help:\n\
-- Read-only panel showing metadata for the selected issue\n\
-- Use global focus keys (1-5) to switch to an interactive component\n\
-";
+pub const HELP: &[HelpElementKind] = &[
+    crate::help_text!("Issue Preview Help"),
+    crate::help_text!("Read-only panel showing metadata for the selected issue."),
+    crate::help_keybind!("1-6", "use global focus keys to switch components"),
+];
 
 #[derive(Debug, Clone)]
 pub struct IssuePreviewSeed {
