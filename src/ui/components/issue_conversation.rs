@@ -1481,9 +1481,12 @@ impl MarkdownRenderer {
             | TagEnd::Strikethrough
             | TagEnd::Superscript
             | TagEnd::Subscript
-            | TagEnd::Link
-            | TagEnd::Heading(_) => {
+            | TagEnd::Link => {
                 self.pop_style();
+            }
+            TagEnd::Heading(_) => {
+                self.pop_style();
+                self.flush_line();
             }
             TagEnd::BlockQuote(_) => {
                 self.flush_line();
@@ -1543,9 +1546,11 @@ impl MarkdownRenderer {
 
     fn inline_math(&mut self, text: &str) {
         self.ensure_admonition_header();
-        let style = self
-            .current_style
-            .patch(Style::new().fg(Color::LightMagenta).add_modifier(Modifier::ITALIC));
+        let style = self.current_style.patch(
+            Style::new()
+                .fg(Color::LightMagenta)
+                .add_modifier(Modifier::ITALIC),
+        );
         self.push_text(text, style);
     }
 
