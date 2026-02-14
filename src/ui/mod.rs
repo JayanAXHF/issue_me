@@ -11,6 +11,7 @@ use crate::{
     errors::AppError,
     ui::components::{
         Component, DumbComponent,
+        help::HelpElementKind,
         issue_conversation::IssueConversation,
         issue_create::IssueCreate,
         issue_detail::IssuePreview,
@@ -36,7 +37,7 @@ use rat_widget::{
 use ratatui::{
     crossterm,
     prelude::*,
-    widgets::{Block, Paragraph, Wrap},
+    widgets::{Block, Padding, Paragraph},
 };
 use ratatui_macros::line;
 use std::{
@@ -57,20 +58,22 @@ use crate::ui::components::{
 const TICK_RATE: std::time::Duration = std::time::Duration::from_millis(100);
 pub static COLOR_PROFILE: OnceLock<TermProfile> = OnceLock::new();
 pub static CIDMAP: OnceLock<HashMap<u8, usize>> = OnceLock::new();
-const HELP_TEXT: &str = "
-Global Help:\n\
-\n\
-- Press '1' to focus Search Bar\n\
-- Press '2' to focus Issue List\n\
-- Press '3' to focus Issue Conversation\n\
-- Press '4' to focus Label List\n\
-- Press '5' to focus Issue Preview\n\
-- Press '6' to focus Issue Create\n\
-- Press 'q' or 'Ctrl+C' to quit the application\n\
-- Press '?' or 'Ctrl+H' to toggle this help menu\n\
-\n\
-Navigate through the application using the keyboard shortcuts above. Each component may have its own specific controls once focused.
-";
+const HELP_TEXT: &[HelpElementKind] = &[
+    crate::help_text!("Global Help"),
+    crate::help_text!(""),
+    crate::help_keybind!("1", "focus Search Bar"),
+    crate::help_keybind!("2", "focus Issue List"),
+    crate::help_keybind!("3", "focus Issue Conversation"),
+    crate::help_keybind!("4", "focus Label List"),
+    crate::help_keybind!("5", "focus Issue Preview"),
+    crate::help_keybind!("6", "focus Issue Create"),
+    crate::help_keybind!("q / Ctrl+C", "quit the application"),
+    crate::help_keybind!("? / Ctrl+H", "toggle help menu"),
+    crate::help_text!(""),
+    crate::help_text!(
+        "Navigate with the focus keys above. Components may have additional controls."
+    ),
+];
 
 pub async fn run(
     AppState {
@@ -104,7 +107,7 @@ struct App {
     cancel_action: CancellationToken,
     components: Vec<Box<dyn Component>>,
     dumb_components: Vec<Box<dyn DumbComponent>>,
-    help: Option<&'static str>,
+    help: Option<&'static [HelpElementKind]>,
     in_help: bool,
     last_focused: Option<FocusFlag>,
 }
@@ -405,17 +408,14 @@ impl App {
             }
             if self.in_help {
                 let help_text = self.help.unwrap_or(HELP_TEXT);
-                let help_component = components::help::HelpComponent::new(
-                    Paragraph::new(help_text)
-                        .wrap(Wrap { trim: true })
-                        .centered(),
-                )
-                .set_constraints([30, 30])
-                .block(
-                    Block::bordered()
-                        .title("Help")
-                        .border_type(ratatui::widgets::BorderType::Rounded),
-                );
+                let help_component = components::help::HelpComponent::new(help_text)
+                    .set_constraint(30)
+                    .block(
+                        Block::bordered()
+                            .title("Help")
+                            .padding(Padding::horizontal(2))
+                            .border_type(ratatui::widgets::BorderType::Rounded),
+                    );
                 help_component.render(area, buf);
             }
         })?;
@@ -510,7 +510,7 @@ pub enum Action {
     FinishedLoading,
     ForceFocusChange,
     ForceFocusChangeRev,
-    SetHelp(&'static str),
+    SetHelp(&'static [HelpElementKind]),
 }
 
 #[derive(Debug, Clone)]

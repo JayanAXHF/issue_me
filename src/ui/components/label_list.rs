@@ -29,7 +29,9 @@ use tracing::error;
 use crate::{
     app::GITHUB_CLIENT,
     ui::{
-        Action, AppState, COLOR_PROFILE, components::Component, layout::Layout,
+        Action, AppState, COLOR_PROFILE,
+        components::{Component, help::HelpElementKind},
+        layout::Layout,
         utils::get_border_style,
     },
 };
@@ -37,17 +39,17 @@ use crate::{
 const MARKER: &str = ratatui::symbols::marker::DOT;
 const STATUS_TTL: Duration = Duration::from_secs(3);
 const DEFAULT_COLOR: &str = "ededed";
-pub const HELP: &str = "\
-Label List Help:\n\
-- Up/Down: select label\n\
-- a: add label to selected issue\n\
-- d: remove selected label from issue\n\
-- f: open popup label regex search\n\
-- Ctrl+I (popup): toggle case-insensitive search\n\
-- Enter: submit add/create input\n\
-- Esc: cancel current label edit flow\n\
-- y / n: confirm or cancel creating missing label\n\
-";
+pub const HELP: &[HelpElementKind] = &[
+    crate::help_text!("Label List Help"),
+    crate::help_keybind!("Up/Down", "select label"),
+    crate::help_keybind!("a", "add label to selected issue"),
+    crate::help_keybind!("d", "remove selected label from issue"),
+    crate::help_keybind!("f", "open popup label regex search"),
+    crate::help_keybind!("Ctrl+I", "toggle case-insensitive search (popup)"),
+    crate::help_keybind!("Enter", "submit add/create input"),
+    crate::help_keybind!("Esc", "cancel current label edit flow"),
+    crate::help_keybind!("y / n", "confirm or cancel creating missing label"),
+];
 
 #[derive(Debug)]
 pub struct LabelList {
