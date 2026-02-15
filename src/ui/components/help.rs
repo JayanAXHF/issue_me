@@ -56,7 +56,7 @@ pub fn help_elements_to_text(elements: &[HelpElementKind], width: u16) -> Text<'
 
 /// A simple component to display help information. It can be centered within its parent area using the `set_constraints` method.
 pub struct HelpComponent<'a> {
-    contraint: u16,
+    constraint: u16,
     content: &'a [HelpElementKind],
     block: Option<ratatui::widgets::Block<'a>>,
     width: u16,
@@ -68,13 +68,13 @@ impl<'a> HelpComponent<'a> {
         Self {
             content,
             width: 0,
-            contraint: 0,
+            constraint: 0,
             block: None,
         }
     }
     /// Sets the constraints for centering the component. The constraints are specified as percentages of the parent area.
-    pub fn set_constraint(self, contraint: u16) -> Self {
-        Self { contraint, ..self }
+    pub fn set_constraint(self, constraint: u16) -> Self {
+        Self { constraint, ..self }
     }
     /// Sets a block around the component. This can be used to visually separate the help content from other UI elements.
     pub fn block(self, block: ratatui::widgets::Block<'a>) -> Self {
@@ -90,8 +90,8 @@ impl<'a> Widget for HelpComponent<'a> {
         use ratatui::layout::Constraint::{Length, Percentage};
         trace!(content = ?self.content, "Rendering HelpComponent");
         trace!(content_length = ?self.content.len(), "Content length");
-        let mut centered_area = if self.contraint != 0 {
-            area.centered(Percentage(self.contraint), Length(self.contraint))
+        let mut centered_area = if self.constraint != 0 {
+            area.centered(Percentage(self.constraint), Length(self.constraint))
         } else {
             area
         };

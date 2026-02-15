@@ -1,0 +1,3 @@
+[default.extend-words]
+ratatui = "ratatui"
+strat = "strat"
