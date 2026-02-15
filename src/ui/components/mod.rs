@@ -11,7 +11,6 @@ pub mod issue_conversation;
 pub mod issue_create;
 pub mod issue_detail;
 pub mod issue_list;
-pub mod label_filter;
 pub mod label_list;
 pub mod search_bar;
 pub mod status_bar;

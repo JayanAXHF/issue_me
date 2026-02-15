@@ -1,5 +1,4 @@
 pub mod components;
-pub mod filter;
 pub mod layout;
 pub mod macros;
 pub mod theme;

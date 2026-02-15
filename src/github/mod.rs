@@ -26,7 +26,3 @@ impl GithubClient {
         &self.inner
     }
 }
-
-pub mod issues;
-pub mod labels;
-pub mod repos;
