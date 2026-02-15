@@ -4,7 +4,7 @@ use clap::Parser;
 use tracing_subscriber::filter::{self, Directive};
 
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, version, about, long_about = None, styles = get_styles())]
 pub struct Cli {
     /// Top-level CLI arguments controlling repository selection and runtime behavior.
     #[clap(flatten)]
@@ -67,4 +67,48 @@ impl TryFrom<LogLevel> for Directive {
     fn try_from(value: LogLevel) -> Result<Self, Self::Error> {
         Directive::from_str(&value.to_string())
     }
+}
+
+// Source - https://stackoverflow.com/a/76916424
+// Posted by Praveen Perera, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-02-15, License - CC BY-SA 4.0
+
+pub fn get_styles() -> clap::builder::Styles {
+    use clap::builder::styling::{AnsiColor, Color, Style};
+    clap::builder::Styles::styled()
+        .usage(
+            Style::new()
+                .bold()
+                .fg_color(Some(Color::Ansi(AnsiColor::Cyan))),
+        )
+        .header(
+            Style::new()
+                .bold()
+                .fg_color(Some(Color::Ansi(AnsiColor::Green))),
+        )
+        .literal(
+            Style::new()
+                .bold()
+                .fg_color(Some(Color::Ansi(AnsiColor::Cyan))),
+        )
+        .invalid(
+            Style::new()
+                .bold()
+                .fg_color(Some(Color::Ansi(AnsiColor::Red))),
+        )
+        .error(
+            Style::new()
+                .bold()
+                .fg_color(Some(Color::Ansi(AnsiColor::Red))),
+        )
+        .valid(
+            Style::new()
+                .bold()
+                .fg_color(Some(Color::Ansi(AnsiColor::Cyan))),
+        )
+        .placeholder(
+            Style::new()
+                .bold()
+                .fg_color(Some(Color::Ansi(AnsiColor::BrightBlue))),
+        )
 }
