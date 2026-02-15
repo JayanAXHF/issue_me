@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use rat_widget::focus::HasFocus;
 use ratatui::buffer::Buffer;
 
+use crate::errors::AppError;
 use crate::ui::{Action, layout::Layout};
 use ratatui::crossterm::event::Event;
 
@@ -21,8 +22,9 @@ pub trait DumbComponent {
     fn register_action_tx(&mut self, action_tx: tokio::sync::mpsc::Sender<Action>) {
         let _ = action_tx;
     }
-    async fn handle_event(&mut self, event: Action) {
+    async fn handle_event(&mut self, event: Action) -> Result<(), AppError> {
         let _ = event;
+        Ok(())
     }
 }
 
@@ -32,8 +34,9 @@ pub trait Component: HasFocus {
     fn register_action_tx(&mut self, action_tx: tokio::sync::mpsc::Sender<Action>) {
         let _ = action_tx;
     }
-    async fn handle_event(&mut self, event: Action) {
+    async fn handle_event(&mut self, event: Action) -> Result<(), AppError> {
         let _ = event;
+        Ok(())
     }
     fn cursor(&self) -> Option<(u16, u16)> {
         None

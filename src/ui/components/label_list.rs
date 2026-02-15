@@ -28,6 +28,7 @@ use tracing::error;
 
 use crate::{
     app::GITHUB_CLIENT,
+    errors::AppError,
     ui::{
         Action, AppState, COLOR_PROFILE,
         components::{Component, help::HelpElementKind},
@@ -115,7 +116,7 @@ impl std::ops::Deref for LabelListItem {
 impl From<&LabelListItem> for ListItem<'_> {
     fn from(value: &LabelListItem) -> Self {
         let rgb = &value.0.color;
-        let mut c = Color::from_str(&format!("#{}", rgb)).unwrap();
+        let mut c = Color::from_str(&format!("#{}", rgb)).unwrap_or(Color::Gray);
         if let Some(profile) = COLOR_PROFILE.get() {
             let adapted = profile.adapt_color(c);
             if let Some(adapted) = adapted {
@@ -129,7 +130,7 @@ impl From<&LabelListItem> for ListItem<'_> {
 
 fn popup_list_item(value: &LabelListItem) -> ListItem<'_> {
     let rgb = &value.0.color;
-    let mut c = Color::from_str(&format!("#{}", rgb)).unwrap();
+    let mut c = Color::from_str(&format!("#{}", rgb)).unwrap_or(Color::Gray);
     if let Some(profile) = COLOR_PROFILE.get() {
         let adapted = profile.adapt_color(c);
         if let Some(adapted) = adapted {
@@ -823,11 +824,11 @@ impl Component for LabelList {
     fn register_action_tx(&mut self, action_tx: tokio::sync::mpsc::Sender<Action>) {
         self.action_tx = Some(action_tx);
     }
-    async fn handle_event(&mut self, event: Action) {
+    async fn handle_event(&mut self, event: Action) -> Result<(), AppError> {
         match event {
             Action::AppEvent(ref event) => {
                 if self.handle_popup_event(event).await {
-                    return;
+                    return Ok(());
                 }
 
                 enum SubmitAction {
@@ -1002,13 +1003,13 @@ impl Component for LabelList {
             } => {
                 if let Some(popup) = self.popup_search.as_mut() {
                     if popup.request_id != request_id {
-                        return;
+                        return Ok(());
                     }
                     popup.scanned_count = scanned;
                     popup.matched_count = matched;
                     popup.error = None;
                 } else {
-                    return;
+                    return Ok(());
                 }
                 self.append_popup_matches(items);
             }
@@ -1019,7 +1020,7 @@ impl Component for LabelList {
             } => {
                 if let Some(popup) = self.popup_search.as_mut() {
                     if popup.request_id != request_id {
-                        return;
+                        return Ok(());
                     }
                     popup.loading = false;
                     popup.scanned_count = scanned;
@@ -1033,7 +1034,7 @@ impl Component for LabelList {
             } => {
                 if let Some(popup) = self.popup_search.as_mut() {
                     if popup.request_id != request_id {
-                        return;
+                        return Ok(());
                     }
                     popup.loading = false;
                     popup.error = Some(message);
@@ -1057,6 +1058,7 @@ impl Component for LabelList {
             }
             _ => {}
         }
+        Ok(())
     }
 
     fn cursor(&self) -> Option<(u16, u16)> {

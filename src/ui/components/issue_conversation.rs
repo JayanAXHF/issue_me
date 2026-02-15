@@ -36,6 +36,7 @@ use tracing::info;
 
 use crate::{
     app::GITHUB_CLIENT,
+    errors::AppError,
     ui::{
         Action,
         components::{
@@ -47,6 +48,7 @@ use crate::{
         utils::get_border_style,
     },
 };
+use anyhow::anyhow;
 
 pub const HELP: &[HelpElementKind] = &[
     crate::help_text!("Issue Conversation Help"),
@@ -1006,17 +1008,17 @@ impl Component for IssueConversation {
         self.action_tx = Some(action_tx);
     }
 
-    async fn handle_event(&mut self, event: Action) {
+    async fn handle_event(&mut self, event: Action) -> Result<(), AppError> {
         match event {
             Action::AppEvent(ref event) => {
                 if self.screen != MainScreen::Details {
-                    return;
+                    return Ok(());
                 }
                 if self.handle_close_popup_event(event).await {
-                    return;
+                    return Ok(());
                 }
                 if self.handle_reaction_mode_event(event).await {
-                    return;
+                    return Ok(());
                 }
 
                 match event {
@@ -1026,14 +1028,14 @@ impl Component for IssueConversation {
                             && self.list_state.is_focused() =>
                     {
                         self.start_add_reaction_mode();
-                        return;
+                        return Ok(());
                     }
                     event::Event::Key(key)
                         if key.code == event::KeyCode::Char('R')
                             && self.list_state.is_focused() =>
                     {
                         self.start_remove_reaction_mode();
-                        return;
+                        return Ok(());
                     }
                     event::Event::Key(key)
                         if key.code == event::KeyCode::Char('C')
@@ -1041,30 +1043,37 @@ impl Component for IssueConversation {
                                 || self.body_paragraph_state.is_focused()) =>
                     {
                         self.open_close_popup();
-                        return;
+                        return Ok(());
                     }
                     ct_event!(keycode press Tab) | ct_event!(keycode press BackTab)
                         if self.input_state.is_focused() =>
                     {
-                        self.action_tx
-                            .as_ref()
-                            .unwrap()
+                        let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                            AppError::Other(anyhow!(
+                                "issue conversation action channel unavailable"
+                            ))
+                        })?;
+                        action_tx
                             .send(Action::ForceFocusChange)
                             .await
-                            .unwrap();
+                            .map_err(|_| AppError::TokioMpsc)?;
                     }
-                    ct_event!(keycode press Esc) if self.body_paragraph_state.is_focused() => self
-                        .action_tx
-                        .as_ref()
-                        .unwrap()
-                        .send(Action::ForceFocusChangeRev)
-                        .await
-                        .unwrap(),
+                    ct_event!(keycode press Esc) if self.body_paragraph_state.is_focused() => {
+                        let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                            AppError::Other(anyhow!(
+                                "issue conversation action channel unavailable"
+                            ))
+                        })?;
+                        action_tx
+                            .send(Action::ForceFocusChangeRev)
+                            .await
+                            .map_err(|_| AppError::TokioMpsc)?;
+                    }
                     ct_event!(keycode press Esc) if !self.body_paragraph_state.is_focused() => {
                         if let Some(tx) = self.action_tx.clone() {
                             let _ = tx.send(Action::ChangeIssueScreen(MainScreen::List)).await;
                         }
-                        return;
+                        return Ok(());
                     }
                     ct_event!(key press CONTROL-'p') => {
                         self.textbox_state.toggle();
@@ -1083,27 +1092,30 @@ impl Component for IssueConversation {
                         }
                     }
                     ct_event!(keycode press Enter) if self.list_state.is_focused() => {
-                        self.action_tx
-                            .as_ref()
-                            .unwrap()
+                        let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                            AppError::Other(anyhow!(
+                                "issue conversation action channel unavailable"
+                            ))
+                        })?;
+                        action_tx
                             .send(Action::ForceFocusChange)
                             .await
-                            .unwrap();
+                            .map_err(|_| AppError::TokioMpsc)?;
                     }
                     ct_event!(keycode press CONTROL-Enter) | ct_event!(keycode press ALT-Enter) => {
                         info!("Enter pressed");
                         let Some(seed) = &self.current else {
-                            return;
+                            return Ok(());
                         };
                         let body = self.input_state.text();
                         let trimmed = body.trim();
                         if trimmed.is_empty() {
                             self.post_error = Some("Comment cannot be empty.".to_string());
-                            return;
+                            return Ok(());
                         }
                         self.input_state.set_text("");
                         self.send_comment(seed.number, trimmed.to_string()).await;
-                        return;
+                        return Ok(());
                     }
 
                     event::Event::Key(key) if key.code != event::KeyCode::Tab => {
@@ -1118,21 +1130,27 @@ impl Component for IssueConversation {
                                 | ct_event!(keycode press Left)
                                 | ct_event!(keycode press Right)
                         ) {
-                            self.action_tx
-                                .as_ref()
-                                .unwrap()
+                            let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                                AppError::Other(anyhow!(
+                                    "issue conversation action channel unavailable"
+                                ))
+                            })?;
+                            action_tx
                                 .send(Action::ForceRender)
                                 .await
-                                .unwrap();
+                                .map_err(|_| AppError::TokioMpsc)?;
                         }
                         if o == TextOutcome::TextChanged || o2 == Outcome::Changed {
                             info!("Input changed, forcing re-render");
-                            self.action_tx
-                                .as_ref()
-                                .unwrap()
+                            let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                                AppError::Other(anyhow!(
+                                    "issue conversation action channel unavailable"
+                                ))
+                            })?;
+                            action_tx
                                 .send(Action::ForceRender)
                                 .await
-                                .unwrap();
+                                .map_err(|_| AppError::TokioMpsc)?;
                         }
                     }
                     _ => {}
@@ -1177,12 +1195,13 @@ impl Component for IssueConversation {
                     self.body_cache = None;
                     self.body_paragraph_state.set_line_offset(0);
                     self.error = None;
-                    self.action_tx
-                        .as_ref()
-                        .unwrap()
+                    let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                        AppError::Other(anyhow!("issue conversation action channel unavailable"))
+                    })?;
+                    action_tx
                         .send(Action::ForceRender)
                         .await
-                        .unwrap();
+                        .map_err(|_| AppError::TokioMpsc)?;
                 }
             }
             Action::IssueReactionsLoaded {
@@ -1293,6 +1312,7 @@ impl Component for IssueConversation {
             }
             _ => {}
         }
+        Ok(())
     }
 
     fn cursor(&self) -> Option<(u16, u16)> {
