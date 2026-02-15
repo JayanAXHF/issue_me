@@ -20,6 +20,7 @@ use throbber_widgets_tui::{BRAILLE_SIX_DOUBLE, Throbber, ThrobberState, WhichUse
 
 use crate::{
     app::GITHUB_CLIENT,
+    errors::AppError,
     ui::{
         Action, AppState,
         components::{
@@ -33,6 +34,7 @@ use crate::{
         utils::get_border_style,
     },
 };
+use anyhow::anyhow;
 
 pub const HELP: &[HelpElementKind] = &[
     crate::help_text!("Issue Create Help"),
@@ -334,11 +336,11 @@ impl Component for IssueCreate {
         self.action_tx = Some(action_tx);
     }
 
-    async fn handle_event(&mut self, event: Action) {
+    async fn handle_event(&mut self, event: Action) -> Result<(), AppError> {
         match event {
             Action::AppEvent(ref event) => {
                 if self.screen != MainScreen::CreateIssue {
-                    return;
+                    return Ok(());
                 }
                 match event {
                     ct_event!(keycode press Esc) => {
@@ -347,7 +349,7 @@ impl Component for IssueCreate {
                                 .send(Action::ChangeIssueScreen(MainScreen::List))
                                 .await;
                         }
-                        return;
+                        return Ok(());
                     }
                     ct_event!(key press CONTROL-'p') => {
                         self.mode.toggle();
@@ -361,11 +363,11 @@ impl Component for IssueCreate {
                                 self.preview_state.focus.set(true);
                             }
                         }
-                        return;
+                        return Ok(());
                     }
                     ct_event!(keycode press CONTROL-Enter) | ct_event!(keycode press ALT-Enter) => {
                         self.submit().await;
-                        return;
+                        return Ok(());
                     }
                     ct_event!(keycode press Tab) | ct_event!(keycode press SHIFT-Tab)
                         if self.body_state.is_focused() =>
@@ -373,7 +375,7 @@ impl Component for IssueCreate {
                         if let Some(action_tx) = self.action_tx.clone() {
                             let _ = action_tx.send(Action::ForceFocusChange).await;
                         }
-                        return;
+                        return Ok(());
                     }
                     _ => {}
                 }
@@ -390,28 +392,30 @@ impl Component for IssueCreate {
                         | ct_event!(keycode press Left)
                         | ct_event!(keycode press Right)
                 ) {
-                    self.action_tx
-                        .as_ref()
-                        .unwrap()
+                    let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                        AppError::Other(anyhow!("issue create action channel unavailable"))
+                    })?;
+                    action_tx
                         .send(Action::ForceRender)
                         .await
-                        .unwrap();
+                        .map_err(|_| AppError::TokioMpsc)?;
                 }
                 match self.mode {
                     InputMode::Input => {
                         if let event::Event::Key(key) = event
                             && key.code == event::KeyCode::Tab
                         {
-                            return;
+                            return Ok(());
                         }
                         let o = self.body_state.handle(event, rat_widget::event::Regular);
                         if o == TextOutcome::TextChanged {
-                            self.action_tx
-                                .as_ref()
-                                .unwrap()
+                            let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                                AppError::Other(anyhow!("issue create action channel unavailable"))
+                            })?;
+                            action_tx
                                 .send(Action::ForceRender)
                                 .await
-                                .unwrap();
+                                .map_err(|_| AppError::TokioMpsc)?;
                         }
                     }
                     InputMode::Preview => {
@@ -451,6 +455,7 @@ impl Component for IssueCreate {
             }
             _ => {}
         }
+        Ok(())
     }
 
     fn cursor(&self) -> Option<(u16, u16)> {

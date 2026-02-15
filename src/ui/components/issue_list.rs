@@ -11,6 +11,7 @@ use crate::{
         utils::get_border_style,
     },
 };
+use anyhow::anyhow;
 use async_trait::async_trait;
 use octocrab::{
     Page,
@@ -155,9 +156,10 @@ impl<'a> IssueList<'a> {
         let owner_clone = owner.clone();
         let repo_clone = repo.clone();
         tokio::spawn(async move {
-            let Ok(mut p) = GITHUB_CLIENT
-                .get()
-                .unwrap()
+            let Some(client) = GITHUB_CLIENT.get() else {
+                return;
+            };
+            let Ok(mut p) = client
                 .inner()
                 .search()
                 .issues_and_pull_requests(&format!(
@@ -174,9 +176,9 @@ impl<'a> IssueList<'a> {
             let items = std::mem::take(&mut p.items);
             p.items = items;
 
-            tx.send(Action::NewPage(Arc::new(p), MergeStrategy::Append))
-                .await
-                .unwrap();
+            let _ = tx
+                .send(Action::NewPage(Arc::new(p), MergeStrategy::Append))
+                .await;
         });
         Self {
             page: None,
@@ -493,7 +495,7 @@ impl Component for IssueList<'_> {
         self.action_tx = Some(action_tx);
     }
 
-    async fn handle_event(&mut self, event: crate::ui::Action) {
+    async fn handle_event(&mut self, event: crate::ui::Action) -> Result<(), AppError> {
         match event {
             crate::ui::Action::Tick => {
                 if self.state == LoadingState::Loading {
@@ -522,10 +524,10 @@ impl Component for IssueList<'_> {
             }
             crate::ui::Action::AppEvent(ref event) => {
                 if self.screen != MainScreen::List {
-                    return;
+                    return Ok(());
                 }
                 if self.handle_close_popup_event(event).await {
-                    return;
+                    return Ok(());
                 }
                 if matches!(event, ct_event!(key press 'a')) && self.list_state.is_focused() {
                     self.inner_state = IssueListState::AssigningInput;
@@ -533,7 +535,7 @@ impl Component for IssueList<'_> {
                     self.assign_input_state.set_text("");
                     self.assign_input_state.focus.set(true);
                     self.list_state.focus.set(false);
-                    return;
+                    return Ok(());
                 }
                 if matches!(event, ct_event!(key press SHIFT-'A')) && self.list_state.is_focused() {
                     self.inner_state = IssueListState::AssigningInput;
@@ -541,31 +543,35 @@ impl Component for IssueList<'_> {
                     self.assign_input_state.set_text("");
                     self.assign_input_state.focus.set(true);
                     self.list_state.focus.set(false);
-                    return;
+                    return Ok(());
                 }
                 if matches!(event, ct_event!(key press 'n')) && self.list_state.is_focused() {
                     self.action_tx
                         .as_ref()
-                        .unwrap()
+                        .ok_or_else(|| {
+                            AppError::Other(anyhow!("issue list action channel unavailable"))
+                        })?
                         .send(crate::ui::Action::EnterIssueCreate)
                         .await
-                        .unwrap();
+                        .map_err(|_| AppError::TokioMpsc)?;
                     self.action_tx
                         .as_ref()
-                        .unwrap()
+                        .ok_or_else(|| {
+                            AppError::Other(anyhow!("issue list action channel unavailable"))
+                        })?
                         .send(crate::ui::Action::ChangeIssueScreen(
                             MainScreen::CreateIssue,
                         ))
                         .await
-                        .unwrap();
-                    return;
+                        .map_err(|_| AppError::TokioMpsc)?;
+                    return Ok(());
                 }
                 if matches!(event, ct_event!(key press SHIFT-'C'))
                     && self.list_state.is_focused()
                     && self.inner_state == IssueListState::Normal
                 {
                     self.open_close_popup();
-                    return;
+                    return Ok(());
                 }
                 if matches!(event, ct_event!(keycode press Esc))
                     && self.inner_state == IssueListState::AssigningInput
@@ -574,9 +580,12 @@ impl Component for IssueList<'_> {
                     self.inner_state = IssueListState::Normal;
                     self.list_state.focus.set(true);
                     if let Some(action_tx) = self.action_tx.as_ref() {
-                        action_tx.send(Action::ForceRender).await.unwrap();
+                        action_tx
+                            .send(Action::ForceRender)
+                            .await
+                            .map_err(|_| AppError::TokioMpsc)?;
                     }
-                    return;
+                    return Ok(());
                 }
                 if matches!(event, ct_event!(keycode press Enter))
                     && self.inner_state == IssueListState::AssigningInput
@@ -590,7 +599,13 @@ impl Component for IssueList<'_> {
                         .map(|s| s.trim().to_string())
                         .collect::<Vec<_>>();
                     if !assignees.is_empty() {
-                        let tx = self.action_tx.as_ref().unwrap().clone();
+                        let tx = self
+                            .action_tx
+                            .as_ref()
+                            .ok_or_else(|| {
+                                AppError::Other(anyhow!("issue list action channel unavailable"))
+                            })?
+                            .clone();
                         let (done_tx, done_rx) = oneshot::channel();
                         self.assign_done_rx = Some(done_rx);
                         self.assign_loading = true;
@@ -605,8 +620,12 @@ impl Component for IssueList<'_> {
                                 .filter_map(|s| if s.is_empty() { None } else { Some(&**s) })
                                 .collect::<Vec<_>>();
 
-                            let issue_handler =
-                                GITHUB_CLIENT.get().unwrap().inner().issues(owner, repo);
+                            let issue_handler = if let Some(client) = GITHUB_CLIENT.get() {
+                                client.inner().issues(owner, repo)
+                            } else {
+                                let _ = done_tx.send(());
+                                return;
+                            };
                             let res = match assignment_mode {
                                 AssignmentMode::Add => {
                                     issue_handler
@@ -620,11 +639,11 @@ impl Component for IssueList<'_> {
                                 }
                             };
                             if let Ok(issue) = res {
-                                tx.send(crate::ui::Action::SelectedIssuePreview {
-                                    seed: IssuePreviewSeed::from_issue(&issue),
-                                })
-                                .await
-                                .unwrap();
+                                let _ = tx
+                                    .send(crate::ui::Action::SelectedIssuePreview {
+                                        seed: IssuePreviewSeed::from_issue(&issue),
+                                    })
+                                    .await;
                             }
                             let _ = done_tx.send(());
                         });
@@ -635,20 +654,24 @@ impl Component for IssueList<'_> {
                         let issue = &self.issues[selected].0;
                         self.action_tx
                             .as_ref()
-                            .unwrap()
+                            .ok_or_else(|| {
+                                AppError::Other(anyhow!("issue list action channel unavailable"))
+                            })?
                             .send(crate::ui::Action::EnterIssueDetails {
                                 seed: IssueConversationSeed::from_issue(issue),
                             })
                             .await
-                            .unwrap();
+                            .map_err(|_| AppError::TokioMpsc)?;
                         self.action_tx
                             .as_ref()
-                            .unwrap()
+                            .ok_or_else(|| {
+                                AppError::Other(anyhow!("issue list action channel unavailable"))
+                            })?
                             .send(crate::ui::Action::ChangeIssueScreen(MainScreen::Details))
                             .await
-                            .unwrap();
+                            .map_err(|_| AppError::TokioMpsc)?;
                     }
-                    return;
+                    return Ok(());
                 }
 
                 self.assign_input_state
@@ -661,16 +684,23 @@ impl Component for IssueList<'_> {
                         if selected == self.issues.len() - 1
                             && let Some(page) = &self.page
                         {
-                            let tx = self.action_tx.as_ref().unwrap().clone();
+                            let tx = self
+                                .action_tx
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    AppError::Other(anyhow!(
+                                        "issue list action channel unavailable"
+                                    ))
+                                })?
+                                .clone();
                             let page_next = page.next.clone();
                             self.state = LoadingState::Loading;
                             tokio::spawn(async move {
-                                let p = GITHUB_CLIENT
-                                    .get()
-                                    .unwrap()
-                                    .inner()
-                                    .get_page::<Issue>(&page_next)
-                                    .await;
+                                let Some(client) = GITHUB_CLIENT.get() else {
+                                    let _ = tx.send(crate::ui::Action::FinishedLoading).await;
+                                    return;
+                                };
+                                let p = client.inner().get_page::<Issue>(&page_next).await;
                                 if let Ok(pres) = p
                                     && let Some(mut p) = pres
                                 {
@@ -680,36 +710,39 @@ impl Component for IssueList<'_> {
                                         .filter(|i| i.pull_request.is_none())
                                         .collect();
                                     p.items = items;
-                                    tx.send(crate::ui::Action::NewPage(
-                                        Arc::new(p),
-                                        MergeStrategy::Append,
-                                    ))
-                                    .await
-                                    .map_err(|_| AppError::TokioMpsc)?;
+                                    let _ = tx
+                                        .send(crate::ui::Action::NewPage(
+                                            Arc::new(p),
+                                            MergeStrategy::Append,
+                                        ))
+                                        .await;
                                 }
-                                tx.send(crate::ui::Action::FinishedLoading).await.unwrap();
-                                Ok::<(), AppError>(())
+                                let _ = tx.send(crate::ui::Action::FinishedLoading).await;
                             });
                         }
                         let issue = &self.issues[selected].0;
                         let labels = &issue.labels;
                         self.action_tx
                             .as_ref()
-                            .unwrap()
+                            .ok_or_else(|| {
+                                AppError::Other(anyhow!("issue list action channel unavailable"))
+                            })?
                             .send(crate::ui::Action::SelectedIssue {
                                 number: issue.number,
                                 labels: labels.clone(),
                             })
                             .await
-                            .unwrap();
+                            .map_err(|_| AppError::TokioMpsc)?;
                         self.action_tx
                             .as_ref()
-                            .unwrap()
+                            .ok_or_else(|| {
+                                AppError::Other(anyhow!("issue list action channel unavailable"))
+                            })?
                             .send(crate::ui::Action::SelectedIssuePreview {
                                 seed: IssuePreviewSeed::from_issue(issue),
                             })
                             .await
-                            .unwrap();
+                            .map_err(|_| AppError::TokioMpsc)?;
                     }
                 }
             }
@@ -779,6 +812,7 @@ impl Component for IssueList<'_> {
             }
             _ => {}
         }
+        Ok(())
     }
 
     fn should_render(&self) -> bool {
@@ -797,11 +831,9 @@ impl Component for IssueList<'_> {
 
     fn set_global_help(&self) {
         info!("Setting global help for IssueList");
-        self.action_tx
-            .as_ref()
-            .unwrap()
-            .try_send(crate::ui::Action::SetHelp(HELP))
-            .unwrap();
+        if let Some(action_tx) = self.action_tx.as_ref() {
+            let _ = action_tx.try_send(crate::ui::Action::SetHelp(HELP));
+        }
     }
 
     fn capture_focus_event(&self, _event: &crossterm::event::Event) -> bool {

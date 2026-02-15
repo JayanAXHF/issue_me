@@ -155,9 +155,10 @@ impl TextSearch {
         info!(search, "Searching with query");
         self.state = State::Loading;
         tokio::spawn(async move {
-            let page = GITHUB_CLIENT
-                .get()
-                .unwrap()
+            let client = GITHUB_CLIENT.get().ok_or_else(|| {
+                AppError::Other(anyhow::anyhow!("github client is not initialized"))
+            })?;
+            let page = client
                 .search()
                 .issues_and_pull_requests(&search)
                 .page(1_u32)
@@ -210,7 +211,7 @@ impl Component for TextSearch {
     fn register_action_tx(&mut self, action_tx: tokio::sync::mpsc::Sender<Action>) {
         self.action_tx = Some(action_tx);
     }
-    async fn handle_event(&mut self, event: Action) {
+    async fn handle_event(&mut self, event: Action) -> Result<(), AppError> {
         match event {
             Action::ChangeIssueScreen(screen) => {
                 self.screen = screen;
@@ -225,14 +226,14 @@ impl Component for TextSearch {
             }
             Action::AppEvent(ref event) => {
                 if self.screen == MainScreen::CreateIssue {
-                    return;
+                    return Ok(());
                 }
                 if self.self_is_focused() {
                     match event {
                         ct_event!(keycode press Enter) => {
                             if let Some(action_tx) = self.action_tx.clone() {
                                 self.execute_search(action_tx).await;
-                                return;
+                                return Ok(());
                             }
                         }
                         _ => {}
@@ -252,6 +253,7 @@ impl Component for TextSearch {
             }
             _ => {}
         }
+        Ok(())
     }
     fn cursor(&self) -> Option<(u16, u16)> {
         self.search_state

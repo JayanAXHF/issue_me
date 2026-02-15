@@ -12,7 +12,10 @@ use ratatui::{
 };
 use ratatui_macros::line;
 
-use crate::ui::{Action, AppState, components::DumbComponent, layout::Layout};
+use crate::{
+    errors::AppError,
+    ui::{Action, AppState, components::DumbComponent, layout::Layout},
+};
 
 #[derive(Debug, Clone)]
 pub struct IssuePreviewSeed {
@@ -189,10 +192,11 @@ impl DumbComponent for IssuePreview {
         self.action_tx = Some(action_tx);
     }
 
-    async fn handle_event(&mut self, event: Action) {
+    async fn handle_event(&mut self, event: Action) -> Result<(), AppError> {
         if let Action::SelectedIssuePreview { seed } = event {
             self.current = Some(seed);
         }
+        Ok(())
     }
 }
 

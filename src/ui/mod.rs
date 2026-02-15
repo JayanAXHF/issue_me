@@ -37,7 +37,7 @@ use rat_widget::{
 use ratatui::{
     crossterm,
     prelude::*,
-    widgets::{Block, Padding, Paragraph},
+    widgets::{Block, Clear, Padding, Paragraph, Wrap},
 };
 use ratatui_macros::line;
 use std::{
@@ -49,6 +49,8 @@ use termprofile::{DetectorSettings, TermProfile};
 use tokio::{select, sync::mpsc::Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, instrument};
+
+use anyhow::anyhow;
 
 use crate::ui::components::{
     issue_conversation::{CommentView, IssueConversationSeed},
@@ -84,7 +86,7 @@ pub async fn run(
     if COLOR_PROFILE.get().is_none() {
         COLOR_PROFILE
             .set(TermProfile::detect(&stdout(), DetectorSettings::default()))
-            .unwrap();
+            .map_err(|_| AppError::ErrorSettingGlobal("color profile"))?;
     }
     let mut terminal = ratatui::init();
     let (action_tx, action_rx) = tokio::sync::mpsc::channel(100);
@@ -109,6 +111,7 @@ struct App {
     help: Option<&'static [HelpElementKind]>,
     in_help: bool,
     last_focused: Option<FocusFlag>,
+    last_event_error: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -128,9 +131,12 @@ impl AppState {
     }
 }
 
-fn focus(state: &mut App) -> &mut Focus {
+fn focus(state: &mut App) -> Result<&mut Focus, AppError> {
     focus_noret(state);
-    state.focus.as_mut().unwrap()
+    state
+        .focus
+        .as_mut()
+        .ok_or_else(|| AppError::Other(anyhow!("focus state was not initialized")))
 }
 
 fn focus_noret(state: &mut App) {
@@ -157,7 +163,7 @@ impl App {
         let mut issue_create = IssueCreate::new(state.clone());
         let issue_handler = GITHUB_CLIENT
             .get()
-            .unwrap()
+            .ok_or_else(|| AppError::Other(anyhow!("github client is not initialized")))?
             .inner()
             .issues(state.owner.clone(), state.repo.clone());
         let mut issue_list = IssueList::new(
@@ -182,6 +188,7 @@ impl App {
             action_tx,
             action_rx,
             last_focused: None,
+            last_event_error: None,
             cancel_action: Default::default(),
             components: comps,
             dumb_components: vec![Box::new(status_bar), Box::new(issue_preview)],
@@ -233,18 +240,31 @@ impl App {
         });
         focus_noret(self);
         if let Some(ref mut focus) = self.focus {
-            let last = self.components.last().unwrap();
+            let last = self
+                .components
+                .last()
+                .ok_or_else(|| AppError::Other(anyhow!("no components available to focus")))?;
             focus.focus(&**last);
         }
         let ctok = self.cancel_action.clone();
         loop {
             let action = self.action_rx.recv().await;
+            let mut should_draw_error_popup = false;
             if let Some(ref action) = action {
                 for component in self.components.iter_mut() {
-                    component.handle_event(action.clone()).await;
+                    if let Err(err) = component.handle_event(action.clone()).await {
+                        self.last_event_error = Some(err.to_string());
+                        should_draw_error_popup = true;
+                    }
                     if component.gained_focus() && self.last_focused != Some(component.focus()) {
                         self.last_focused = Some(component.focus());
                         component.set_global_help();
+                    }
+                }
+                for component in self.dumb_components.iter_mut() {
+                    if let Err(err) = component.handle_event(action.clone()).await {
+                        self.last_event_error = Some(err.to_string());
+                        should_draw_error_popup = true;
                     }
                 }
             }
@@ -257,12 +277,12 @@ impl App {
             match action {
                 Some(Action::None) | Some(Action::Tick) => {}
                 Some(Action::ForceFocusChange) => {
-                    let focus = focus(self);
+                    let focus = focus(self)?;
                     let r = focus.next_force();
                     info!(outcome = ?r, "Focus");
                 }
                 Some(Action::ForceFocusChangeRev) => {
-                    let focus = focus(self);
+                    let focus = focus(self)?;
                     let r = focus.prev_force();
                     info!(outcome = ?r, "Focus");
                 }
@@ -278,7 +298,8 @@ impl App {
                 }
                 _ => {}
             }
-            if should_draw || matches!(action, Some(Action::ForceRender)) {
+            if should_draw || matches!(action, Some(Action::ForceRender)) || should_draw_error_popup
+            {
                 self.draw(terminal)?;
             }
             if self.cancel_action.is_cancelled() {
@@ -301,6 +322,15 @@ impl App {
             self.cancel_action.cancel();
             return Ok(());
         }
+        if self.last_event_error.is_some() {
+            if matches!(
+                event,
+                ct_event!(keycode press Esc) | ct_event!(keycode press Enter)
+            ) {
+                self.last_event_error = None;
+            }
+            return Ok(());
+        }
         if matches!(event, ct_event!(key press CONTROL-'h')) {
             self.in_help = !self.in_help;
             self.help = Some(HELP_TEXT);
@@ -315,7 +345,7 @@ impl App {
             .components
             .iter()
             .any(|c| c.should_render() && c.capture_focus_event(event));
-        let focus = focus(self);
+        let focus = focus(self)?;
         let outcome = focus.handle(event, Regular);
         info!(outcome = ?outcome, "Focus");
         if let Outcome::Continue = outcome
@@ -334,10 +364,23 @@ impl App {
                             .any(|c| c.should_render() && c.capture_focus_event(event)) =>
                 {
                     //SAFETY: char is in range
-                    let index: u8 = char.to_digit(10).unwrap().try_into().unwrap();
+                    let index: u8 = char
+                        .to_digit(10)
+                        .ok_or_else(|| {
+                            AppError::Other(anyhow!("failed to parse focus shortcut from key"))
+                        })?
+                        .try_into()
+                        .map_err(|_| {
+                            AppError::Other(anyhow!("focus shortcut is out of expected range"))
+                        })?;
                     //SAFETY: cid is always in map, and map is static
                     info!("Focusing {}", index);
-                    let cid = CIDMAP.get().unwrap().get(&index).unwrap();
+                    let cid_map = CIDMAP
+                        .get()
+                        .ok_or_else(|| AppError::ErrorSettingGlobal("component id map"))?;
+                    let cid = cid_map.get(&index).ok_or_else(|| {
+                        AppError::Other(anyhow!("component id {index} not found in focus map"))
+                    })?;
                     //SAFETY: cid is in map, and map is static
                     let component = unsafe { self.components.get_unchecked(*cid) };
 
@@ -415,6 +458,20 @@ impl App {
                             .border_type(ratatui::widgets::BorderType::Rounded),
                     );
                 help_component.render(area, buf);
+            }
+            if let Some(err) = self.last_event_error.as_ref() {
+                let popup_area = area.centered(Constraint::Percentage(60), Constraint::Length(5));
+                Clear.render(popup_area, buf);
+                let popup = Paragraph::new(err.as_str())
+                    .wrap(Wrap { trim: false })
+                    .block(
+                        Block::bordered()
+                            .title("Error")
+                            .title_bottom("Esc/Enter: dismiss")
+                            .padding(Padding::horizontal(1))
+                            .border_type(ratatui::widgets::BorderType::Rounded),
+                    );
+                popup.render(popup_area, buf);
             }
         })?;
         Ok(())

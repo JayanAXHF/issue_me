@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use inquire::Password;
 
 use crate::app::cli::Cli;
@@ -35,7 +36,7 @@ impl App {
         use crate::ui::AppState;
         let current_user = GITHUB_CLIENT
             .get()
-            .unwrap()
+            .ok_or_else(|| AppError::Other(anyhow!("github client is not initialized")))?
             .inner()
             .current()
             .user()
