@@ -1,12 +1,12 @@
 # gitv
 
-
 > [!NOTE]
-> 
+>
 > Following in the footsteps of the <u>g</u>lobal <u>r</u>egex <u>e</u>xpression <u>p</u>arser `grep`, I introduce to you <u>g</u>ithub <u>i</u>ssues <u>t</u>erminal <u>v</u>iewer `gitv`.
 
-
 `gitv` is a terminal-based viewer for GitHub issues. It allows you to view and manage your GitHub issues directly from the terminal.
+
+![gitv screenshot](./assets/demo.avif)
 
 ### Features
 
