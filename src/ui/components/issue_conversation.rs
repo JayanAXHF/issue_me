@@ -1130,18 +1130,18 @@ impl Component for IssueConversation {
                 if !self.in_details_mode() {
                     return Ok(());
                 }
-                if self.screen == MainScreen::DetailsFullscreen {
-                    if matches!(
+                if self.screen == MainScreen::DetailsFullscreen
+                    && matches!(
                         event,
                         ct_event!(key press 'f') | ct_event!(keycode press Esc)
-                    ) {
-                        if let Some(tx) = self.action_tx.clone() {
-                            let _ = tx
-                                .send(Action::ChangeIssueScreen(MainScreen::Details))
-                                .await;
-                        }
-                        return Ok(());
+                    )
+                {
+                    if let Some(tx) = self.action_tx.clone() {
+                        let _ = tx
+                            .send(Action::ChangeIssueScreen(MainScreen::Details))
+                            .await;
                     }
+                    return Ok(());
                 }
                 if self.handle_close_popup_event(event).await {
                     return Ok(());
@@ -1417,10 +1417,10 @@ impl Component for IssueConversation {
                 comment_id,
                 result,
             } => {
-                if !self
+                if self
                     .current
                     .as_ref()
-                    .is_some_and(|seed| seed.number == issue_number)
+                    .is_none_or(|seed| seed.number != issue_number)
                 {
                     return Ok(());
                 }
@@ -1572,8 +1572,8 @@ impl Component for IssueConversation {
         if self.close_popup.is_some() {
             return true;
         }
-        if !self.input_state.is_focused() {
-            return false;
+        if self.input_state.is_focused() {
+            return true;
         }
         match event {
             crossterm::event::Event::Key(key) => matches!(
