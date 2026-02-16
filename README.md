@@ -6,7 +6,7 @@
 
 `gitv` is a terminal-based viewer for GitHub issues. It allows you to view and manage your GitHub issues directly from the terminal.
 
-![gitv screenshot](./assets/demo.avif)
+![Made with VHS](https://vhs.charm.sh/vhs-WEyf76YrrGK3OgECWA3pI.gif)
 
 ### Features
 
