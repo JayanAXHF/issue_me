@@ -26,6 +26,7 @@
 - `C` - close selected issue
 - `Enter (popup)` - confirm close reason
 - `Ctrl+P` - toggle comment input/preview
+- `e` - edit selected comment in external editor
 - `r` - add reaction to selected comment
 - `R` - remove reaction from selected comment
 - `Ctrl+Enter / Alt+Enter` - send comment

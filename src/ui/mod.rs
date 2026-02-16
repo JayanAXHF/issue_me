@@ -110,6 +110,7 @@ struct App {
     dumb_components: Vec<Box<dyn DumbComponent>>,
     help: Option<&'static [HelpElementKind]>,
     in_help: bool,
+    in_editor: bool,
     current_screen: MainScreen,
     last_focused: Option<FocusFlag>,
     last_event_error: Option<String>,
@@ -191,6 +192,7 @@ impl App {
         Ok(Self {
             focus: None,
             in_help: false,
+            in_editor: false,
             current_screen: MainScreen::default(),
             help: None,
             action_tx,
@@ -268,7 +270,18 @@ impl App {
         loop {
             let action = self.action_rx.recv().await;
             let mut should_draw_error_popup = false;
+            let mut full_redraw = false;
             if let Some(ref action) = action {
+                if let Action::EditorModeChanged(enabled) = action {
+                    self.in_editor = *enabled;
+                    if *enabled {
+                        continue;
+                    }
+                    full_redraw = true;
+                }
+                if self.in_editor && matches!(action, Action::Tick | Action::AppEvent(_)) {
+                    continue;
+                }
                 for component in self.components.iter_mut() {
                     if let Err(err) = component.handle_event(action.clone()).await {
                         let message = err.to_string();
@@ -327,6 +340,9 @@ impl App {
                 Some(Action::SetHelp(help)) => {
                     self.help = Some(help);
                 }
+                Some(Action::EditorModeChanged(enabled)) => {
+                    self.in_editor = enabled;
+                }
                 Some(Action::ChangeIssueScreen(screen)) => {
                     self.current_screen = screen;
                     focus_noret(self);
@@ -337,12 +353,17 @@ impl App {
                 }
                 _ => {}
             }
-            if (should_draw
-                || matches!(action, Some(Action::ForceRender))
-                || should_draw_error_popup)
-                && let Err(err) = self.draw(terminal)
+            if !self.in_editor
+                && (should_draw
+                    || matches!(action, Some(Action::ForceRender))
+                    || should_draw_error_popup)
             {
-                self.capture_error(err);
+                if full_redraw && let Err(err) = terminal.clear() {
+                    self.capture_error(err);
+                }
+                if let Err(err) = self.draw(terminal) {
+                    self.capture_error(err);
+                }
             }
             if self.cancel_action.is_cancelled() {
                 break;
@@ -576,6 +597,15 @@ pub enum Action {
         number: u64,
         message: String,
     },
+    IssueCommentEditFinished {
+        issue_number: u64,
+        comment_id: u64,
+        result: std::result::Result<String, String>,
+    },
+    IssueCommentPatched {
+        issue_number: u64,
+        comment: CommentView,
+    },
     EnterIssueCreate,
     IssueCreateSuccess {
         issue: Box<Issue>,
@@ -620,6 +650,7 @@ pub enum Action {
     ForceFocusChange,
     ForceFocusChangeRev,
     SetHelp(&'static [HelpElementKind]),
+    EditorModeChanged(bool),
 }
 
 #[derive(Debug, Clone)]

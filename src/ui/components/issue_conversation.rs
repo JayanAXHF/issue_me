@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use crossterm::event;
 use futures::{StreamExt, stream};
-use octocrab::models::{IssueState, issues::Comment as ApiComment, reactions::ReactionContent};
+use octocrab::models::{
+    CommentId, IssueState, issues::Comment as ApiComment, reactions::ReactionContent,
+};
 use pulldown_cmark::{
     BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag, TagEnd, TextMergeStream,
 };
@@ -58,6 +60,7 @@ pub const HELP: &[HelpElementKind] = &[
     crate::help_keybind!("C", "close selected issue"),
     crate::help_keybind!("Enter (popup)", "confirm close reason"),
     crate::help_keybind!("Ctrl+P", "toggle comment input/preview"),
+    crate::help_keybind!("e", "edit selected comment in external editor"),
     crate::help_keybind!("r", "add reaction to selected comment"),
     crate::help_keybind!("R", "remove reaction from selected comment"),
     crate::help_keybind!("Ctrl+Enter / Alt+Enter", "send comment"),
@@ -507,6 +510,88 @@ impl IssueConversation {
     fn selected_comment(&self) -> Option<&CommentView> {
         let id = self.selected_comment_id()?;
         self.cache_comments.iter().find(|c| c.id == id)
+    }
+
+    async fn open_external_editor_for_comment(
+        &mut self,
+        issue_number: u64,
+        comment_id: u64,
+        initial_body: String,
+    ) {
+        let Some(action_tx) = self.action_tx.clone() else {
+            return;
+        };
+        if action_tx
+            .send(Action::EditorModeChanged(true))
+            .await
+            .is_err()
+        {
+            return;
+        }
+
+        tokio::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                ratatui::restore();
+                let edited = edit::edit(&initial_body).map_err(|err| err.to_string());
+                let _ = ratatui::init();
+                edited
+            })
+            .await
+            .map_err(|err| err.to_string())
+            .and_then(|edited| edited.map_err(|err| err.replace('\n', " ")));
+
+            let _ = action_tx.send(Action::EditorModeChanged(false)).await;
+            let _ = action_tx
+                .send(Action::IssueCommentEditFinished {
+                    issue_number,
+                    comment_id,
+                    result,
+                })
+                .await;
+            let _ = action_tx.send(Action::ForceRender).await;
+        });
+    }
+
+    async fn patch_comment(&mut self, issue_number: u64, comment_id: u64, body: String) {
+        let Some(action_tx) = self.action_tx.clone() else {
+            return;
+        };
+        let owner = self.owner.clone();
+        let repo = self.repo.clone();
+
+        tokio::spawn(async move {
+            let Some(client) = GITHUB_CLIENT.get() else {
+                let _ = action_tx
+                    .send(Action::IssueCommentEditFinished {
+                        issue_number,
+                        comment_id,
+                        result: Err("GitHub client not initialized.".to_string()),
+                    })
+                    .await;
+                return;
+            };
+
+            let handler = client.inner().issues(owner, repo);
+            match handler.update_comment(CommentId(comment_id), body).await {
+                Ok(comment) => {
+                    let _ = action_tx
+                        .send(Action::IssueCommentPatched {
+                            issue_number,
+                            comment: CommentView::from_api(comment),
+                        })
+                        .await;
+                }
+                Err(err) => {
+                    let _ = action_tx
+                        .send(Action::IssueCommentEditFinished {
+                            issue_number,
+                            comment_id,
+                            result: Err(err.to_string().replace('\n', " ")),
+                        })
+                        .await;
+                }
+            }
+        });
     }
 
     fn reaction_mode_prompt(&self) -> Option<String> {
@@ -1046,9 +1131,14 @@ impl Component for IssueConversation {
                     return Ok(());
                 }
                 if self.screen == MainScreen::DetailsFullscreen {
-                    if matches!(event, ct_event!(key press 'f') | ct_event!(keycode press Esc)) {
+                    if matches!(
+                        event,
+                        ct_event!(key press 'f') | ct_event!(keycode press Esc)
+                    ) {
                         if let Some(tx) = self.action_tx.clone() {
-                            let _ = tx.send(Action::ChangeIssueScreen(MainScreen::Details)).await;
+                            let _ = tx
+                                .send(Action::ChangeIssueScreen(MainScreen::Details))
+                                .await;
                         }
                         return Ok(());
                     }
@@ -1072,6 +1162,26 @@ impl Component for IssueConversation {
                                 .send(Action::ChangeIssueScreen(MainScreen::DetailsFullscreen))
                                 .await;
                         }
+                        return Ok(());
+                    }
+                    event::Event::Key(key)
+                        if key.code == event::KeyCode::Char('e')
+                            && key.modifiers == event::KeyModifiers::NONE
+                            && (self.list_state.is_focused()
+                                || self.body_paragraph_state.is_focused()) =>
+                    {
+                        let seed = self.current.as_ref().ok_or_else(|| {
+                            AppError::Other(anyhow!("no issue selected for comment editing"))
+                        })?;
+                        let comment = self
+                            .selected_comment()
+                            .ok_or_else(|| AppError::Other(anyhow!("select a comment to edit")))?;
+                        self.open_external_editor_for_comment(
+                            seed.number,
+                            comment.id,
+                            comment.body.to_string(),
+                        )
+                        .await;
                         return Ok(());
                     }
                     event::Event::Key(key)
@@ -1300,6 +1410,69 @@ impl Component for IssueConversation {
                 self.posting = false;
                 if self.current.as_ref().is_some_and(|s| s.number == number) {
                     self.post_error = Some(message);
+                }
+            }
+            Action::IssueCommentEditFinished {
+                issue_number,
+                comment_id,
+                result,
+            } => {
+                if !self
+                    .current
+                    .as_ref()
+                    .is_some_and(|seed| seed.number == issue_number)
+                {
+                    return Ok(());
+                }
+                match result {
+                    Ok(body) => {
+                        let Some(existing) =
+                            self.cache_comments.iter().find(|c| c.id == comment_id)
+                        else {
+                            return Err(AppError::Other(anyhow!(
+                                "selected comment is no longer available"
+                            )));
+                        };
+                        if body == existing.body.as_ref() {
+                            return Ok(());
+                        }
+                        let trimmed = body.trim();
+                        if trimmed.is_empty() {
+                            return Err(AppError::Other(anyhow!(
+                                "comment cannot be empty after editing"
+                            )));
+                        }
+                        self.patch_comment(issue_number, comment_id, trimmed.to_string())
+                            .await;
+                        if let Some(action_tx) = self.action_tx.as_ref() {
+                            action_tx
+                                .send(Action::ForceRender)
+                                .await
+                                .map_err(|_| AppError::TokioMpsc)?;
+                        }
+                    }
+                    Err(message) => {
+                        return Err(AppError::Other(anyhow!("comment edit failed: {message}")));
+                    }
+                }
+            }
+            Action::IssueCommentPatched {
+                issue_number,
+                comment,
+            } => {
+                if self
+                    .current
+                    .as_ref()
+                    .is_some_and(|seed| seed.number == issue_number)
+                    && let Some(existing) =
+                        self.cache_comments.iter_mut().find(|c| c.id == comment.id)
+                {
+                    let reactions = existing.reactions.clone();
+                    let my_reactions = existing.my_reactions.clone();
+                    *existing = comment;
+                    existing.reactions = reactions;
+                    existing.my_reactions = my_reactions;
+                    self.markdown_cache.remove(&existing.id);
                 }
             }
             Action::IssueCloseSuccess { issue } => {
