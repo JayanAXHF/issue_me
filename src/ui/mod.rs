@@ -296,30 +296,26 @@ impl App {
             };
             match action {
                 Some(Action::None) | Some(Action::Tick) => {}
-                Some(Action::ForceFocusChange) => {
-                    match focus(self) {
-                        Ok(focus) => {
-                            let r = focus.next_force();
-                            trace!(outcome = ?r, "Focus");
-                        }
-                        Err(err) => {
-                            self.capture_error(err);
-                            should_draw_error_popup = true;
-                        }
+                Some(Action::ForceFocusChange) => match focus(self) {
+                    Ok(focus) => {
+                        let r = focus.next_force();
+                        trace!(outcome = ?r, "Focus");
                     }
-                }
-                Some(Action::ForceFocusChangeRev) => {
-                    match focus(self) {
-                        Ok(focus) => {
-                            let r = focus.prev_force();
-                            trace!(outcome = ?r, "Focus");
-                        }
-                        Err(err) => {
-                            self.capture_error(err);
-                            should_draw_error_popup = true;
-                        }
+                    Err(err) => {
+                        self.capture_error(err);
+                        should_draw_error_popup = true;
                     }
-                }
+                },
+                Some(Action::ForceFocusChangeRev) => match focus(self) {
+                    Ok(focus) => {
+                        let r = focus.prev_force();
+                        trace!(outcome = ?r, "Focus");
+                    }
+                    Err(err) => {
+                        self.capture_error(err);
+                        should_draw_error_popup = true;
+                    }
+                },
                 Some(Action::AppEvent(ref event)) => {
                     if let Err(err) = self.handle_event(event).await {
                         self.capture_error(err);
@@ -335,11 +331,12 @@ impl App {
                 }
                 _ => {}
             }
-            if should_draw || matches!(action, Some(Action::ForceRender)) || should_draw_error_popup
+            if (should_draw
+                || matches!(action, Some(Action::ForceRender))
+                || should_draw_error_popup)
+                && let Err(err) = self.draw(terminal)
             {
-                if let Err(err) = self.draw(terminal) {
-                    self.capture_error(err);
-                }
+                self.capture_error(err);
             }
             if self.cancel_action.is_cancelled() {
                 break;
