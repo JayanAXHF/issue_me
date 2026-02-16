@@ -41,13 +41,14 @@ use ratatui::{
 };
 use std::{
     collections::HashMap,
+    fmt::Display,
     io::stdout,
     sync::{Arc, OnceLock},
 };
 use termprofile::{DetectorSettings, TermProfile};
 use tokio::{select, sync::mpsc::Sender};
 use tokio_util::sync::CancellationToken;
-use tracing::{instrument, trace};
+use tracing::{error, instrument, trace};
 
 use anyhow::anyhow;
 
@@ -95,9 +96,9 @@ pub async fn run(
         AppState::new(repo, owner, current_user),
     )
     .await?;
-    app.run(&mut terminal).await?;
+    let run_result = app.run(&mut terminal).await;
     ratatui::restore();
-    Ok(())
+    run_result
 }
 
 struct App {
@@ -149,6 +150,12 @@ fn focus_noret(state: &mut App) {
 }
 
 impl App {
+    fn capture_error(&mut self, err: impl Display) {
+        let message = err.to_string();
+        error!(error = %message, "captured ui error");
+        self.last_event_error = Some(message);
+    }
+
     pub async fn new(
         action_tx: Sender<Action>,
         action_rx: tokio::sync::mpsc::Receiver<Action>,
@@ -206,19 +213,25 @@ impl App {
         for component in self.components.iter_mut() {
             component.register_action_tx(action_tx.clone());
         }
-        execute!(
+        if let Err(err) = execute!(
             stdout(),
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
-        )?;
-        execute!(
+        ) {
+            self.capture_error(err);
+        }
+        if let Err(err) = execute!(
             stdout(),
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES)
-        )?;
+        ) {
+            self.capture_error(err);
+        }
 
-        execute!(
+        if let Err(err) = execute!(
             stdout(),
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
-        )?;
+        ) {
+            self.capture_error(err);
+        }
         tokio::spawn(async move {
             let mut tick_interval = tokio::time::interval(TICK_RATE);
             let mut event_stream = EventStream::new();
@@ -243,11 +256,11 @@ impl App {
         });
         focus_noret(self);
         if let Some(ref mut focus) = self.focus {
-            let last = self
-                .components
-                .last()
-                .ok_or_else(|| AppError::Other(anyhow!("no components available to focus")))?;
-            focus.focus(&**last);
+            if let Some(last) = self.components.last() {
+                focus.focus(&**last);
+            } else {
+                self.capture_error(anyhow!("no components available to focus"));
+            }
         }
         let ctok = self.cancel_action.clone();
         loop {
@@ -256,7 +269,9 @@ impl App {
             if let Some(ref action) = action {
                 for component in self.components.iter_mut() {
                     if let Err(err) = component.handle_event(action.clone()).await {
-                        self.last_event_error = Some(err.to_string());
+                        let message = err.to_string();
+                        error!(error = %message, "captured ui error");
+                        self.last_event_error = Some(message);
                         should_draw_error_popup = true;
                     }
                     if component.gained_focus() && self.last_focused != Some(component.focus()) {
@@ -266,7 +281,9 @@ impl App {
                 }
                 for component in self.dumb_components.iter_mut() {
                     if let Err(err) = component.handle_event(action.clone()).await {
-                        self.last_event_error = Some(err.to_string());
+                        let message = err.to_string();
+                        error!(error = %message, "captured ui error");
+                        self.last_event_error = Some(message);
                         should_draw_error_popup = true;
                     }
                 }
@@ -280,17 +297,34 @@ impl App {
             match action {
                 Some(Action::None) | Some(Action::Tick) => {}
                 Some(Action::ForceFocusChange) => {
-                    let focus = focus(self)?;
-                    let r = focus.next_force();
-                    trace!(outcome = ?r, "Focus");
+                    match focus(self) {
+                        Ok(focus) => {
+                            let r = focus.next_force();
+                            trace!(outcome = ?r, "Focus");
+                        }
+                        Err(err) => {
+                            self.capture_error(err);
+                            should_draw_error_popup = true;
+                        }
+                    }
                 }
                 Some(Action::ForceFocusChangeRev) => {
-                    let focus = focus(self)?;
-                    let r = focus.prev_force();
-                    trace!(outcome = ?r, "Focus");
+                    match focus(self) {
+                        Ok(focus) => {
+                            let r = focus.prev_force();
+                            trace!(outcome = ?r, "Focus");
+                        }
+                        Err(err) => {
+                            self.capture_error(err);
+                            should_draw_error_popup = true;
+                        }
+                    }
                 }
                 Some(Action::AppEvent(ref event)) => {
-                    self.handle_event(event).await?;
+                    if let Err(err) = self.handle_event(event).await {
+                        self.capture_error(err);
+                        should_draw_error_popup = true;
+                    }
                 }
                 Some(Action::SetHelp(help)) => {
                     self.help = Some(help);
@@ -303,7 +337,9 @@ impl App {
             }
             if should_draw || matches!(action, Some(Action::ForceRender)) || should_draw_error_popup
             {
-                self.draw(terminal)?;
+                if let Err(err) = self.draw(terminal) {
+                    self.capture_error(err);
+                }
             }
             if self.cancel_action.is_cancelled() {
                 break;
