@@ -54,13 +54,14 @@ pub const HELP: &[HelpElementKind] = &[
     crate::help_text!("Issue Conversation Help"),
     crate::help_keybind!("Up/Down", "select issue body/comment entry"),
     crate::help_keybind!("PageUp/PageDown/Home/End", "scroll message body pane"),
+    crate::help_keybind!("f", "toggle fullscreen body view"),
     crate::help_keybind!("C", "close selected issue"),
     crate::help_keybind!("Enter (popup)", "confirm close reason"),
     crate::help_keybind!("Ctrl+P", "toggle comment input/preview"),
     crate::help_keybind!("r", "add reaction to selected comment"),
     crate::help_keybind!("R", "remove reaction from selected comment"),
     crate::help_keybind!("Ctrl+Enter / Alt+Enter", "send comment"),
-    crate::help_keybind!("Esc", "return to issue list screen"),
+    crate::help_keybind!("Esc", "exit fullscreen / return to issue list"),
 ];
 
 struct SyntectAssets {
@@ -200,6 +201,13 @@ impl InputState {
 }
 
 impl IssueConversation {
+    fn in_details_mode(&self) -> bool {
+        matches!(
+            self.screen,
+            MainScreen::Details | MainScreen::DetailsFullscreen
+        )
+    }
+
     pub fn new(app_state: crate::ui::AppState) -> Self {
         Self {
             title: None,
@@ -238,6 +246,11 @@ impl IssueConversation {
     }
 
     pub fn render(&mut self, area: Layout, buf: &mut Buffer) {
+        if self.screen == MainScreen::DetailsFullscreen {
+            self.area = area.main_content;
+            self.render_body(area.main_content, buf);
+            return;
+        }
         self.area = area.main_content;
         let title = self.title.clone().unwrap_or_default();
         let wrapped_title = wrap(&title, area.main_content.width.saturating_sub(2) as usize);
@@ -455,7 +468,11 @@ impl IssueConversation {
                 Block::bordered()
                     .border_type(ratatui::widgets::BorderType::Rounded)
                     .border_style(get_border_style(&self.body_paragraph_state))
-                    .title("Message Body (PageUp/PageDown/Home/End)"),
+                    .title(if self.screen == MainScreen::DetailsFullscreen {
+                        "Message Body (PageUp/PageDown/Home/End | f/Esc: exit fullscreen)"
+                    } else {
+                        "Message Body (PageUp/PageDown/Home/End)"
+                    }),
             )
             .focus_style(Style::default())
             .hide_focus(true)
@@ -1025,8 +1042,16 @@ impl Component for IssueConversation {
     async fn handle_event(&mut self, event: Action) -> Result<(), AppError> {
         match event {
             Action::AppEvent(ref event) => {
-                if self.screen != MainScreen::Details {
+                if !self.in_details_mode() {
                     return Ok(());
+                }
+                if self.screen == MainScreen::DetailsFullscreen {
+                    if matches!(event, ct_event!(key press 'f') | ct_event!(keycode press Esc)) {
+                        if let Some(tx) = self.action_tx.clone() {
+                            let _ = tx.send(Action::ChangeIssueScreen(MainScreen::Details)).await;
+                        }
+                        return Ok(());
+                    }
                 }
                 if self.handle_close_popup_event(event).await {
                     return Ok(());
@@ -1036,6 +1061,19 @@ impl Component for IssueConversation {
                 }
 
                 match event {
+                    event::Event::Key(key)
+                        if key.code == event::KeyCode::Char('f')
+                            && key.modifiers == event::KeyModifiers::NONE
+                            && self.screen == MainScreen::Details
+                            && self.body_paragraph_state.is_focused() =>
+                    {
+                        if let Some(tx) = self.action_tx.clone() {
+                            let _ = tx
+                                .send(Action::ChangeIssueScreen(MainScreen::DetailsFullscreen))
+                                .await;
+                        }
+                        return Ok(());
+                    }
                     event::Event::Key(key)
                         if key.code == event::KeyCode::Char('r')
                             && key.modifiers == event::KeyModifiers::NONE
@@ -1304,6 +1342,12 @@ impl Component for IssueConversation {
                         self.close_popup = None;
                     }
                     MainScreen::Details => {}
+                    MainScreen::DetailsFullscreen => {
+                        self.list_state.focus.set(false);
+                        self.input_state.focus.set(false);
+                        self.paragraph_state.focus.set(false);
+                        self.body_paragraph_state.focus.set(true);
+                    }
                     MainScreen::CreateIssue => {
                         self.input_state.focus.set(false);
                         self.list_state.focus.set(false);
@@ -1335,19 +1379,22 @@ impl Component for IssueConversation {
     }
 
     fn should_render(&self) -> bool {
-        self.screen == MainScreen::Details
+        self.in_details_mode()
     }
 
     fn is_animating(&self) -> bool {
-        self.screen == MainScreen::Details
+        self.in_details_mode()
             && (self.is_loading_current()
                 || self.posting
                 || self.close_popup.as_ref().is_some_and(|popup| popup.loading))
     }
 
     fn capture_focus_event(&self, event: &crossterm::event::Event) -> bool {
-        if self.screen != MainScreen::Details {
+        if !self.in_details_mode() {
             return false;
+        }
+        if self.screen == MainScreen::DetailsFullscreen {
+            return true;
         }
         if self.close_popup.is_some() {
             return true;
@@ -1397,7 +1444,7 @@ impl HasFocus for IssueConversation {
     }
 
     fn navigable(&self) -> Navigation {
-        if self.screen == MainScreen::Details {
+        if self.in_details_mode() {
             Navigation::Regular
         } else {
             Navigation::None

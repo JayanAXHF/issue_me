@@ -31,7 +31,7 @@ use crate::{
     errors::AppError,
     ui::{
         Action, AppState, COLOR_PROFILE,
-        components::{Component, help::HelpElementKind},
+        components::{Component, help::HelpElementKind, issue_list::MainScreen},
         layout::Layout,
         utils::get_border_style,
     },
@@ -63,6 +63,7 @@ pub struct LabelList {
     pending_status: Option<String>,
     owner: String,
     repo: String,
+    screen: MainScreen,
     popup_search: Option<PopupLabelSearchState>,
     label_search_request_seq: u64,
     index: usize,
@@ -163,6 +164,7 @@ impl LabelList {
             pending_status: None,
             owner,
             repo,
+            screen: MainScreen::default(),
             popup_search: None,
             label_search_request_seq: 0,
             index: 0,
@@ -827,6 +829,9 @@ impl Component for LabelList {
     async fn handle_event(&mut self, event: Action) -> Result<(), AppError> {
         match event {
             Action::AppEvent(ref event) => {
+                if self.screen == MainScreen::DetailsFullscreen {
+                    return Ok(());
+                }
                 if self.handle_popup_event(event).await {
                     return Ok(());
                 }
@@ -1056,9 +1061,22 @@ impl Component for LabelList {
                     popup.throbber_state.calc_next();
                 }
             }
+            Action::ChangeIssueScreen(screen) => {
+                self.screen = screen;
+                if screen == MainScreen::DetailsFullscreen {
+                    self.mode = LabelEditMode::Idle;
+                    self.popup_search = None;
+                    self.status_message = None;
+                    self.pending_status = None;
+                }
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    fn should_render(&self) -> bool {
+        self.screen != MainScreen::DetailsFullscreen
     }
 
     fn cursor(&self) -> Option<(u16, u16)> {

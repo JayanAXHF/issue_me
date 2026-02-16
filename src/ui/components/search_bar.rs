@@ -218,6 +218,7 @@ impl Component for TextSearch {
             }
             Action::RefreshIssueList => {
                 if self.screen != MainScreen::CreateIssue
+                    && self.screen != MainScreen::DetailsFullscreen
                     && self.state != State::Loading
                     && let Some(action_tx) = self.action_tx.clone()
                 {
@@ -225,7 +226,9 @@ impl Component for TextSearch {
                 }
             }
             Action::AppEvent(ref event) => {
-                if self.screen == MainScreen::CreateIssue {
+                if self.screen == MainScreen::CreateIssue
+                    || self.screen == MainScreen::DetailsFullscreen
+                {
                     return Ok(());
                 }
                 if self.self_is_focused() {
@@ -263,11 +266,13 @@ impl Component for TextSearch {
     }
 
     fn is_animating(&self) -> bool {
-        self.screen != MainScreen::CreateIssue && self.state == State::Loading
+        self.screen != MainScreen::CreateIssue
+            && self.screen != MainScreen::DetailsFullscreen
+            && self.state == State::Loading
     }
 
     fn should_render(&self) -> bool {
-        self.screen != MainScreen::CreateIssue
+        self.screen != MainScreen::CreateIssue && self.screen != MainScreen::DetailsFullscreen
     }
     fn set_index(&mut self, index: usize) {
         self.index = index;

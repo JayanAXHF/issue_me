@@ -110,6 +110,7 @@ struct App {
     dumb_components: Vec<Box<dyn DumbComponent>>,
     help: Option<&'static [HelpElementKind]>,
     in_help: bool,
+    current_screen: MainScreen,
     last_focused: Option<FocusFlag>,
     last_event_error: Option<String>,
 }
@@ -190,6 +191,7 @@ impl App {
         Ok(Self {
             focus: None,
             in_help: false,
+            current_screen: MainScreen::default(),
             help: None,
             action_tx,
             action_rx,
@@ -324,6 +326,10 @@ impl App {
                 }
                 Some(Action::SetHelp(help)) => {
                     self.help = Some(help);
+                }
+                Some(Action::ChangeIssueScreen(screen)) => {
+                    self.current_screen = screen;
+                    focus_noret(self);
                 }
                 Some(Action::Quit) | None => {
                     ctok.cancel();
@@ -462,7 +468,12 @@ impl App {
     ) -> Result<(), AppError> {
         terminal.draw(|f| {
             let area = f.area();
-            let layout = layout::Layout::new(area);
+            let fullscreen = self.current_screen == MainScreen::DetailsFullscreen;
+            let layout = if fullscreen {
+                layout::Layout::fullscreen(area)
+            } else {
+                layout::Layout::new(area)
+            };
             for component in self.components.iter() {
                 if component.should_render()
                     && let Some(p) = component.cursor()
@@ -477,8 +488,10 @@ impl App {
                     component.render(layout, buf);
                 }
             }
-            for component in self.dumb_components.iter_mut() {
-                component.render(layout, buf);
+            if !fullscreen {
+                for component in self.dumb_components.iter_mut() {
+                    component.render(layout, buf);
+                }
             }
             if self.in_help {
                 let help_text = self.help.unwrap_or(HELP_TEXT);

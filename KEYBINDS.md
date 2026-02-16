@@ -22,13 +22,14 @@
 
 - `Up/Down` - select issue body/comment entry
 - `PageUp/PageDown/Home/End` - scroll message body pane
+- `f` - toggle fullscreen message body view
 - `C` - close selected issue
 - `Enter (popup)` - confirm close reason
 - `Ctrl+P` - toggle comment input/preview
 - `r` - add reaction to selected comment
 - `R` - remove reaction from selected comment
 - `Ctrl+Enter / Alt+Enter` - send comment
-- `Esc` - return to issue list screen
+- `Esc` - exit fullscreen (if active) or return to issue list
 
 #### Issue Create
 

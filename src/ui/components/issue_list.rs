@@ -142,6 +142,7 @@ pub enum MainScreen {
     #[default]
     List,
     Details,
+    DetailsFullscreen,
     CreateIssue,
 }
 

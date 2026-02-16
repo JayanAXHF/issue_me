@@ -31,6 +31,20 @@ impl Layout {
             issue_preview,
         }
     }
+
+    pub fn fullscreen(area: Rect) -> Self {
+        Self {
+            status_bar: area,
+            main_content: area,
+            label_list: area,
+            text_search: area,
+            status_dropdown: area,
+            issue_preview: area,
+            label_search: area,
+            title_bar: area,
+        }
+    }
+
     pub fn areas(&self) -> [Rect; 4] {
         [
             self.title_bar,
