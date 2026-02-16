@@ -1091,6 +1091,10 @@ impl Component for LabelList {
 
     fn capture_focus_event(&self, _event: &crossterm::event::Event) -> bool {
         self.popup_search.is_some()
+            || matches!(
+                self.mode,
+                LabelEditMode::Adding { .. } | LabelEditMode::CreateColor { .. }
+            )
     }
 }
 impl HasFocus for LabelList {
