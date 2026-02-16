@@ -2,7 +2,7 @@
 
 > [!NOTE]
 >
-> Following in the footsteps of the <u>`g`</u>lobal <u>`r`</u>egex <u>`e`</u>xpression <u>`p`</u>rint `grep`, I introduce to you <u>`g`</u>ithub <u>`i`</u>ssues <u>`t`</u>ui <u>`v`</u>iewer `gitv`.
+> Following in the footsteps of the `g`lobal `r`egex `e`xpression `p`rint `grep`, I introduce to you `g`ithub `i`ssues `t`ui `v`iewer `gitv`.
 
 `gitv` is a terminal-based viewer for GitHub issues. It allows you to view and manage your GitHub issues directly from the terminal.
 
@@ -15,6 +15,7 @@
 - Full support for adding and removing reactions
 - Regex search for labels, plus the ability to create, edit, add, and remove labels from issues
 - Commenting on issues, with support for markdown formatting
+- Editing comments
 - Closing issues
 - Assigning and unassigning issues to users
 - Creating new issues
