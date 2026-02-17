@@ -48,5 +48,8 @@
 - `f` - open popup label regex search
 - `Ctrl+I` - toggle case-insensitive search (popup)
 - `Enter` - submit add/create input
+- `Arrows` - navigate label color picker
+- `Tab / Shift+Tab` - switch input/picker focus
+- `Type hex` - set color manually (`#RRGGBB`)
 - `Esc` - cancel current label edit flow
 - `y / n` - confirm or cancel creating missing label

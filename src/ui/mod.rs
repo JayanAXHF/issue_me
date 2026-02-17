@@ -3,6 +3,7 @@ pub mod layout;
 pub mod macros;
 pub mod theme;
 pub mod utils;
+pub mod widgets;
 
 use crate::{
     app::GITHUB_CLIENT,

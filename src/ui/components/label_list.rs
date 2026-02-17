@@ -10,14 +10,14 @@ use octocrab::Error as OctoError;
 use octocrab::models::Label;
 use rat_cursor::HasScreenCursor;
 use rat_widget::{
-    event::{HandleEvent, Regular, ct_event},
+    event::{HandleEvent, Outcome, Regular, ct_event},
     focus::HasFocus,
     list::{ListState, selection::RowSelection},
     text_input::{TextInput, TextInputState},
 };
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout as TuiLayout},
+    layout::{Constraint, Direction, Layout as TuiLayout, Rect},
     style::{Color, Style, Stylize},
     widgets::{Block, Clear, ListItem, Paragraph, StatefulWidget, Widget},
 };
@@ -34,6 +34,7 @@ use crate::{
         components::{Component, help::HelpElementKind, issue_list::MainScreen},
         layout::Layout,
         utils::get_border_style,
+        widgets::color_picker::{ColorPicker, ColorPickerState},
     },
 };
 
@@ -48,6 +49,9 @@ pub const HELP: &[HelpElementKind] = &[
     crate::help_keybind!("f", "open popup label regex search"),
     crate::help_keybind!("Ctrl+I", "toggle case-insensitive search (popup)"),
     crate::help_keybind!("Enter", "submit add/create input"),
+    crate::help_keybind!("Arrows", "navigate label color picker"),
+    crate::help_keybind!("Tab / Shift+Tab", "switch input and picker focus"),
+    crate::help_keybind!("Type hex", "set color manually"),
     crate::help_keybind!("Esc", "cancel current label edit flow"),
     crate::help_keybind!("y / n", "confirm or cancel creating missing label"),
 ];
@@ -75,9 +79,17 @@ struct LabelListItem(Label);
 #[derive(Debug)]
 enum LabelEditMode {
     Idle,
-    Adding { input: TextInputState },
-    ConfirmCreate { name: String },
-    CreateColor { name: String, input: TextInputState },
+    Adding {
+        input: TextInputState,
+    },
+    ConfirmCreate {
+        name: String,
+    },
+    CreateColor {
+        name: String,
+        input: TextInputState,
+        picker: ColorPickerState,
+    },
 }
 
 #[derive(Debug)]
@@ -176,6 +188,7 @@ impl LabelList {
 
         let mut list_area = area.label_list;
         let mut footer_area = None;
+        let mut color_input_area = None;
         if self.needs_footer() {
             let areas = TuiLayout::default()
                 .direction(Direction::Vertical)
@@ -236,6 +249,7 @@ impl LabelList {
                             .title("Label color (#RRGGBB)"),
                     );
                     widget.render(area, buf, input);
+                    color_input_area = Some(area);
                 }
                 LabelEditMode::Idle => {
                     if let Some(status) = &self.status_message {
@@ -246,6 +260,38 @@ impl LabelList {
         }
 
         self.render_popup(area, buf);
+        self.render_color_picker(area, buf, color_input_area);
+    }
+
+    fn render_color_picker(&mut self, area: Layout, buf: &mut Buffer, anchor: Option<Rect>) {
+        let LabelEditMode::CreateColor { picker, .. } = &mut self.mode else {
+            return;
+        };
+        let Some(anchor) = anchor else {
+            return;
+        };
+
+        let bounds = area.main_content;
+        let popup_width = bounds.width.clamp(24, 34);
+        let popup_height = bounds.height.clamp(10, 12);
+        let max_x = bounds
+            .x
+            .saturating_add(bounds.width.saturating_sub(popup_width));
+        let max_y = bounds
+            .y
+            .saturating_add(bounds.height.saturating_sub(popup_height));
+        let x = anchor.x.saturating_sub(2).clamp(bounds.x, max_x);
+        let y = anchor
+            .y
+            .saturating_sub(popup_height.saturating_sub(1))
+            .clamp(bounds.y, max_y);
+        let popup_area = Rect {
+            x,
+            y,
+            width: popup_width,
+            height: popup_height,
+        };
+        ColorPicker.render(popup_area, buf, picker);
     }
 
     fn render_popup(&mut self, area: Layout, buf: &mut Buffer) {
@@ -357,7 +403,12 @@ impl LabelList {
     }
 
     fn needs_footer(&self) -> bool {
-        !matches!(self.mode, LabelEditMode::Idle)
+        matches!(
+            self.mode,
+            LabelEditMode::Adding { .. }
+                | LabelEditMode::ConfirmCreate { .. }
+                | LabelEditMode::CreateColor { .. }
+        )
     }
 
     fn expire_status(&mut self) {
@@ -908,9 +959,11 @@ impl Component for LabelList {
                                 | crossterm::event::KeyCode::Char('Y') => {
                                     let mut input = TextInputState::new_focused();
                                     input.set_text(DEFAULT_COLOR);
+                                    let picker = ColorPickerState::with_initial_hex(DEFAULT_COLOR);
                                     next_mode = Some(LabelEditMode::CreateColor {
                                         name: name.clone(),
                                         input,
+                                        picker,
                                     });
                                 }
                                 crossterm::event::KeyCode::Char('n')
@@ -923,22 +976,41 @@ impl Component for LabelList {
                             }
                         }
                     }
-                    LabelEditMode::CreateColor { name, input } => {
+                    LabelEditMode::CreateColor {
+                        name,
+                        input,
+                        picker,
+                    } => {
                         let mut skip_input = false;
+                        if matches!(event, ct_event!(keycode press Tab)) {
+                            skip_input = true;
+                        }
+                        if matches!(picker.handle(event, Regular), Outcome::Changed) {
+                            input.set_text(picker.selected_hex());
+                            skip_input = true;
+                        }
                         if let crossterm::event::Event::Key(key) = event {
                             match key.code {
                                 crossterm::event::KeyCode::Enter => {
-                                    match Self::normalize_color(input.text()) {
-                                        Ok(color) => {
-                                            submit_action = Some(SubmitAction::Create {
-                                                name: name.clone(),
-                                                color,
-                                            });
-                                            next_mode = Some(LabelEditMode::Idle);
-                                        }
-                                        Err(message) => {
-                                            self.set_status(message);
-                                            skip_input = true;
+                                    if picker.is_focused() {
+                                        submit_action = Some(SubmitAction::Create {
+                                            name: name.clone(),
+                                            color: picker.selected_hex().to_string(),
+                                        });
+                                        next_mode = Some(LabelEditMode::Idle);
+                                    } else {
+                                        match Self::normalize_color(input.text()) {
+                                            Ok(color) => {
+                                                submit_action = Some(SubmitAction::Create {
+                                                    name: name.clone(),
+                                                    color,
+                                                });
+                                                next_mode = Some(LabelEditMode::Idle);
+                                            }
+                                            Err(message) => {
+                                                self.set_status(message);
+                                                skip_input = true;
+                                            }
                                         }
                                     }
                                 }
@@ -948,8 +1020,12 @@ impl Component for LabelList {
                                 _ => {}
                             }
                         }
-                        if next_mode.is_none() && !skip_input {
+
+                        if next_mode.is_none() && !skip_input && input.is_focused() {
                             input.handle(event, Regular);
+                            if let Ok(color) = Self::normalize_color(input.text()) {
+                                *picker = ColorPickerState::with_initial_hex(&color);
+                            }
                         }
                     }
                 }
@@ -1111,7 +1187,9 @@ impl Component for LabelList {
         self.popup_search.is_some()
             || matches!(
                 self.mode,
-                LabelEditMode::Adding { .. } | LabelEditMode::CreateColor { .. }
+                LabelEditMode::Adding { .. }
+                    | LabelEditMode::ConfirmCreate { .. }
+                    | LabelEditMode::CreateColor { .. }
             )
     }
 }
@@ -1122,6 +1200,10 @@ impl HasFocus for LabelList {
         if let Some(popup) = &self.popup_search {
             builder.widget(&popup.input);
             builder.widget(&popup.list_state);
+        }
+        if let LabelEditMode::CreateColor { input, picker, .. } = &self.mode {
+            builder.widget(input);
+            builder.widget(picker);
         }
         builder.end(tag);
     }
