@@ -8,7 +8,7 @@ pub mod widgets;
 use crate::{
     app::GITHUB_CLIENT,
     define_cid_map,
-    errors::AppError,
+    errors::{AppError, Result},
     ui::components::{
         Component, DumbComponent,
         help::HelpElementKind,
@@ -23,7 +23,10 @@ use crate::{
     },
 };
 use crossterm::{
-    event::{EventStream, KeyEvent, KeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
+    event::{
+        DisableBracketedPaste, EnableBracketedPaste, EventStream, KeyEvent,
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
     execute,
 };
 use futures::{StreamExt, future::FutureExt};
@@ -49,7 +52,7 @@ use std::{
 use termprofile::{DetectorSettings, TermProfile};
 use tokio::{select, sync::mpsc::Sender};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, instrument, trace};
+use tracing::{error, info, instrument, trace};
 
 use anyhow::anyhow;
 
@@ -90,6 +93,7 @@ pub async fn run(
             .map_err(|_| AppError::ErrorSettingGlobal("color profile"))?;
     }
     let mut terminal = ratatui::init();
+    setup_more_panic_hooks();
     let (action_tx, action_rx) = tokio::sync::mpsc::channel(100);
     let mut app = App::new(
         action_tx,
@@ -99,6 +103,7 @@ pub async fn run(
     .await?;
     let run_result = app.run(&mut terminal).await;
     ratatui::restore();
+    finish_teardown()?;
     run_result
 }
 
@@ -218,25 +223,11 @@ impl App {
         for component in self.components.iter_mut() {
             component.register_action_tx(action_tx.clone());
         }
-        if let Err(err) = execute!(
-            stdout(),
-            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
-        ) {
-            self.capture_error(err);
-        }
-        if let Err(err) = execute!(
-            stdout(),
-            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES)
-        ) {
+
+        if let Err(err) = setup_terminal() {
             self.capture_error(err);
         }
 
-        if let Err(err) = execute!(
-            stdout(),
-            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
-        ) {
-            self.capture_error(err);
-        }
         tokio::spawn(async move {
             let mut tick_interval = tokio::time::interval(TICK_RATE);
             let mut event_stream = EventStream::new();
@@ -333,6 +324,7 @@ impl App {
                     }
                 },
                 Some(Action::AppEvent(ref event)) => {
+                    info!(?event, "Received app event");
                     if let Err(err) = self.handle_event(event).await {
                         self.capture_error(err);
                         should_draw_error_popup = true;
@@ -350,6 +342,7 @@ impl App {
                 }
                 Some(Action::Quit) | None => {
                     ctok.cancel();
+
                     break;
                 }
                 _ => {}
@@ -685,4 +678,45 @@ impl CloseIssueReason {
             Self::Duplicate => octocrab::models::issues::IssueStateReason::Duplicate,
         }
     }
+}
+
+fn finish_teardown() -> Result<()> {
+    let mut stdout = stdout();
+    execute!(stdout, PopKeyboardEnhancementFlags)?;
+    execute!(stdout, DisableBracketedPaste)?;
+
+    Ok(())
+}
+
+fn setup_terminal() -> Result<()> {
+    let mut stdout = stdout();
+    execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+    )?;
+    execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES)
+    )?;
+    execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    )?;
+    execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    )?;
+    execute!(stdout, EnableBracketedPaste)?;
+
+    Ok(())
+}
+
+fn setup_more_panic_hooks() {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // we want to log the panic with tracing, but also preserve the default panic behavior of printing to stderr and aborting
+        tracing::error!(panic_info = ?info, "Panic occurred");
+        let _ = finish_teardown();
+        hook(info);
+    }));
 }

@@ -24,4 +24,4 @@ pub enum AppError {
     Other(#[from] anyhow::Error),
 }
 
-pub type Result<T> = std::result::Result<T, AppError>;
+pub type Result<T, E = AppError> = std::result::Result<T, E>;

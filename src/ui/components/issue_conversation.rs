@@ -1315,6 +1315,18 @@ impl Component for IssueConversation {
                                 .map_err(|_| AppError::TokioMpsc)?;
                         }
                     }
+                    event::Event::Paste(p) if self.input_state.is_focused() => {
+                        self.input_state.insert_str(p);
+                        let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                            AppError::Other(anyhow!(
+                                "issue conversation action channel unavailable"
+                            ))
+                        })?;
+                        action_tx
+                            .send(Action::ForceRender)
+                            .await
+                            .map_err(|_| AppError::TokioMpsc)?;
+                    }
                     _ => {}
                 }
                 self.body_paragraph_state

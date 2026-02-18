@@ -407,6 +407,9 @@ impl Component for IssueCreate {
                         {
                             return Ok(());
                         }
+                        if let event::Event::Paste(pasted_stuff) = event {
+                            self.body_state.insert_str(pasted_stuff);
+                        }
                         let o = self.body_state.handle(event, rat_widget::event::Regular);
                         if o == TextOutcome::TextChanged {
                             let action_tx = self.action_tx.as_ref().ok_or_else(|| {
