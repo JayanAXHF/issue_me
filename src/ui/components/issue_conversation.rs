@@ -48,6 +48,7 @@ use crate::{
         },
         layout::Layout,
         utils::get_border_style,
+        widgets::link::Link,
     },
 };
 use anyhow::anyhow;
@@ -139,8 +140,8 @@ pub struct IssueConversation {
     current: Option<IssueConversationSeed>,
     cache_number: Option<u64>,
     cache_comments: Vec<CommentView>,
-    markdown_cache: HashMap<u64, Vec<Line<'static>>>,
-    body_cache: Option<Vec<Line<'static>>>,
+    markdown_cache: HashMap<u64, MarkdownRender>,
+    body_cache: Option<MarkdownRender>,
     body_cache_number: Option<u64>,
     markdown_width: usize,
     loading: HashSet<u64>,
@@ -179,6 +180,21 @@ enum InputState {
 enum MessageKey {
     IssueBody(u64),
     Comment(u64),
+}
+
+#[derive(Debug, Clone, Default)]
+struct MarkdownRender {
+    lines: Vec<Line<'static>>,
+    links: Vec<RenderedLink>,
+}
+
+#[derive(Debug, Clone)]
+struct RenderedLink {
+    line: usize,
+    col: usize,
+    label: String,
+    url: String,
+    width: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -409,11 +425,11 @@ impl IssueConversation {
             }
             let body_lines = self
                 .body_cache
-                .get_or_insert_with(|| render_markdown_lines(body, width, 2));
+                .get_or_insert_with(|| render_markdown(body, width, 2));
             items.push(build_comment_preview_item(
                 seed.author.as_ref(),
                 seed.created_at.as_ref(),
-                body_lines,
+                &body_lines.lines,
                 preview_width,
                 seed.author.as_ref() == self.current_user,
                 None,
@@ -431,11 +447,11 @@ impl IssueConversation {
                 let body_lines = self
                     .markdown_cache
                     .entry(comment.id)
-                    .or_insert_with(|| render_markdown_lines(comment.body.as_ref(), width, 2));
+                    .or_insert_with(|| render_markdown(comment.body.as_ref(), width, 2));
                 items.push(build_comment_preview_item(
                     comment.author.as_ref(),
                     comment.created_at.as_ref(),
-                    body_lines,
+                    &body_lines.lines,
                     preview_width,
                     comment.author.as_ref() == self.current_user,
                     comment.reactions.as_deref(),
@@ -456,9 +472,10 @@ impl IssueConversation {
     }
 
     fn render_body(&mut self, body_area: Rect, buf: &mut Buffer) {
-        let body_lines: Vec<Line<'static>> = self
-            .selected_body_lines()
-            .map(|v| v.to_vec())
+        let selected_body = self.selected_body_render().cloned();
+        let body_lines: Vec<Line<'static>> = selected_body
+            .as_ref()
+            .map(|v| v.lines.clone())
             .unwrap_or_else(|| {
                 vec![Line::from(vec![Span::styled(
                     "Select a message to view full content.".to_string(),
@@ -478,24 +495,71 @@ impl IssueConversation {
                     }),
             )
             .focus_style(Style::default())
-            .hide_focus(true)
-            .wrap(ratatui::widgets::Wrap { trim: false });
+            .hide_focus(true);
 
         body.render(body_area, buf, &mut self.body_paragraph_state);
+
+        if let Some(render) = selected_body.as_ref() {
+            self.render_body_links(body_area, buf, render);
+        }
     }
 
-    fn selected_body_lines(&self) -> Option<&[Line<'static>]> {
+    fn selected_body_render(&self) -> Option<&MarkdownRender> {
         let selected = self.list_state.selected_checked()?;
         let key = self.message_keys.get(selected)?;
         match key {
             MessageKey::IssueBody(number) => {
                 if self.body_cache_number == Some(*number) {
-                    self.body_cache.as_deref()
+                    self.body_cache.as_ref()
                 } else {
                     None
                 }
             }
-            MessageKey::Comment(id) => self.markdown_cache.get(id).map(Vec::as_slice),
+            MessageKey::Comment(id) => self.markdown_cache.get(id),
+        }
+    }
+
+    fn render_body_links(&self, body_area: Rect, buf: &mut Buffer, render: &MarkdownRender) {
+        if render.links.is_empty() {
+            return;
+        }
+
+        let inner = Block::bordered()
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .inner(body_area);
+        if inner.width == 0 || inner.height == 0 {
+            return;
+        }
+
+        let line_offset = self.body_paragraph_state.line_offset();
+        for link in &render.links {
+            if link.line < line_offset {
+                continue;
+            }
+
+            let local_y = link.line - line_offset;
+            if local_y >= inner.height as usize || link.col >= inner.width as usize {
+                continue;
+            }
+
+            let available = (inner.width as usize).saturating_sub(link.col);
+            if available == 0 {
+                continue;
+            }
+
+            let link_area = Rect {
+                x: inner.x + link.col as u16,
+                y: inner.y + local_y as u16,
+                width: (available.min(link.width)) as u16,
+                height: 1,
+            };
+            Link::new(link.label.as_str(), link.url.as_str())
+                .style(
+                    Style::new()
+                        .fg(Color::Blue)
+                        .add_modifier(Modifier::UNDERLINED),
+                )
+                .render(link_area, buf);
         }
     }
 
@@ -1829,6 +1893,10 @@ fn truncate_preview(input: &str, max_width: usize) -> String {
 }
 
 pub(crate) fn render_markdown_lines(text: &str, width: usize, indent: usize) -> Vec<Line<'static>> {
+    render_markdown(text, width, indent).lines
+}
+
+fn render_markdown(text: &str, width: usize, indent: usize) -> MarkdownRender {
     let mut renderer = MarkdownRenderer::new(width, indent);
     let options = Options::ENABLE_GFM
         | Options::ENABLE_STRIKETHROUGH
@@ -1860,6 +1928,7 @@ pub(crate) fn render_markdown_lines(text: &str, width: usize, indent: usize) -> 
 
 struct MarkdownRenderer {
     lines: Vec<Line<'static>>,
+    links: Vec<RenderedLink>,
     current_line: Vec<Span<'static>>,
     current_width: usize,
     max_width: usize,
@@ -1874,6 +1943,7 @@ struct MarkdownRenderer {
     code_block_buf: String,
     list_prefix: Option<String>,
     pending_space: bool,
+    active_link_url: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -1925,6 +1995,7 @@ impl MarkdownRenderer {
     fn new(max_width: usize, indent: usize) -> Self {
         Self {
             lines: Vec::new(),
+            links: Vec::new(),
             current_line: Vec::new(),
             current_width: 0,
             max_width: max_width.max(10),
@@ -1939,6 +2010,7 @@ impl MarkdownRenderer {
             code_block_buf: String::new(),
             list_prefix: None,
             pending_space: false,
+            active_link_url: None,
         }
     }
 
@@ -1950,11 +2022,14 @@ impl MarkdownRenderer {
             Tag::Superscript | Tag::Subscript => {
                 self.push_style(Style::new().add_modifier(Modifier::ITALIC))
             }
-            Tag::Link { .. } => self.push_style(
-                Style::new()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::UNDERLINED),
-            ),
+            Tag::Link { dest_url, .. } => {
+                self.active_link_url = Some(dest_url.to_string());
+                self.push_style(
+                    Style::new()
+                        .fg(Color::Blue)
+                        .add_modifier(Modifier::UNDERLINED),
+                );
+            }
             Tag::Heading { .. } => {
                 self.push_style(Style::new().add_modifier(Modifier::BOLD));
             }
@@ -1987,6 +2062,9 @@ impl MarkdownRenderer {
             | TagEnd::Superscript
             | TagEnd::Subscript
             | TagEnd::Link => {
+                if matches!(tag, TagEnd::Link) {
+                    self.active_link_url = None;
+                }
                 self.pop_style();
             }
             TagEnd::Heading(_) => {
@@ -2152,14 +2230,18 @@ impl MarkdownRenderer {
         }
 
         if self.pending_space && self.current_width > prefix_width {
+            let space_col = self.current_width;
             self.current_line.push(Span::raw(" "));
             self.current_width += 1;
+            self.push_link_segment(" ", space_col, 1);
         }
         self.pending_space = false;
 
+        let link_start_col = self.current_width;
         self.current_line
             .push(Span::styled(word.to_string(), style));
         self.current_width += word_width;
+        self.push_link_segment(word, link_start_col, word_width);
     }
 
     fn push_long_word(&mut self, word: &str, style: Style) {
@@ -2172,10 +2254,45 @@ impl MarkdownRenderer {
             if self.current_line.is_empty() {
                 self.start_line();
             }
+            let link_start_col = self.current_width;
+            let part_width = display_width(part);
             self.current_line
                 .push(Span::styled(part.to_string(), style));
-            self.current_width += display_width(part);
+            self.current_width += part_width;
+            self.push_link_segment(part, link_start_col, part_width);
         }
+    }
+
+    fn push_link_segment(&mut self, label: &str, col: usize, width: usize) {
+        let Some(url) = self.active_link_url.as_ref() else {
+            return;
+        };
+        if label.is_empty() || width == 0 {
+            return;
+        }
+
+        let line = self.current_line_index();
+        if let Some(last) = self.links.last_mut()
+            && last.url == *url
+            && last.line == line
+            && last.col + last.width == col
+        {
+            last.label.push_str(label);
+            last.width += width;
+            return;
+        }
+
+        self.links.push(RenderedLink {
+            line,
+            col,
+            label: label.to_string(),
+            url: url.clone(),
+            width,
+        });
+    }
+
+    fn current_line_index(&self) -> usize {
+        self.lines.len()
     }
 
     fn code_block_text(&mut self, text: &str) {
@@ -2284,7 +2401,7 @@ impl MarkdownRenderer {
         }
     }
 
-    fn finish(mut self) -> Vec<Line<'static>> {
+    fn finish(mut self) -> MarkdownRender {
         self.flush_line();
         while self.lines.last().is_some_and(|line| line.spans.is_empty()) {
             self.lines.pop();
@@ -2292,7 +2409,10 @@ impl MarkdownRenderer {
         if self.lines.is_empty() {
             self.lines.push(Line::from(vec![Span::raw("")]));
         }
-        self.lines
+        MarkdownRender {
+            lines: self.lines,
+            links: self.links,
+        }
     }
 
     fn ensure_admonition_header(&mut self) {
@@ -2388,4 +2508,29 @@ fn syntect_style_to_ratatui(style: syntect::highlighting::Style) -> Style {
         out = out.add_modifier(Modifier::UNDERLINED);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_markdown;
+
+    #[test]
+    fn extracts_link_segments_with_urls() {
+        let rendered = render_markdown("Go to [ratatui docs](https://github.com/ratatui/).", 80, 0);
+
+        assert!(!rendered.links.is_empty());
+        assert!(
+            rendered
+                .links
+                .iter()
+                .all(|link| link.url == "https://github.com/ratatui/")
+        );
+    }
+
+    #[test]
+    fn wraps_long_links_into_multiple_segments() {
+        let rendered = render_markdown("[A very long linked label](https://example.com)", 12, 2);
+
+        assert!(rendered.links.len() >= 2);
+    }
 }
