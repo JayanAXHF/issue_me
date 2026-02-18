@@ -1280,6 +1280,26 @@ impl Component for IssueConversation {
                         return Ok(());
                     }
 
+                    ct_event!(key press '>')
+                        if self.list_state.is_focused()
+                            || self.body_paragraph_state.is_focused() =>
+                    {
+                        if let Some(comment) = self.selected_comment() {
+                            let comment_body = comment.body.as_ref();
+                            let quoted = comment_body
+                                .lines()
+                                .map(|line| format!("> {}", line.trim()))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            self.input_state.insert_str(&quoted);
+                            self.input_state.insert_newline();
+                            self.input_state.move_to_end(false);
+                            self.input_state.move_to_line_end(false);
+                            self.input_state.focus.set(true);
+                            self.list_state.focus.set(false);
+                        }
+                    }
+
                     event::Event::Key(key) if key.code != event::KeyCode::Tab => {
                         let o = self.input_state.handle(event, rat_widget::event::Regular);
                         let o2 = self

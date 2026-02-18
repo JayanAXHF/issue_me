@@ -29,6 +29,7 @@
 - `e` - edit selected comment in external editor
 - `r` - add reaction to selected comment
 - `R` - remove reaction from selected comment
+- `>` - quote selected comment in comment input
 - `Ctrl+Enter / Alt+Enter` - send comment
 - `Esc` - exit fullscreen (if active) or return to issue list
 
