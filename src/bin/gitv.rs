@@ -1,6 +1,9 @@
 use clap::Parser;
 use gitv::{
-    app::{App, cli::Cli},
+    app::{
+        App,
+        cli::{Cli, generate_man_pages},
+    },
     auth::AuthProvider,
     errors::AppError,
     logging,
@@ -9,6 +12,11 @@ use gitv::{
 #[tokio::main]
 async fn main() -> anyhow::Result<(), AppError> {
     let cli = Cli::parse();
+    if cli.args.generate_man {
+        let output_dir = generate_man_pages()?;
+        println!("Man page generated at: {}", output_dir.display());
+        return Ok(());
+    }
     if cli.args.print_log_dir {
         println!("Log directory: {}", logging::get_data_dir().display());
         return Ok(());
