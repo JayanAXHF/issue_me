@@ -97,6 +97,9 @@ See [KEYBINDINGS.md](./KEYBINDS.md) for a list of keybindings used in the applic
 
 Contributions to `gitv` are welcome! If you have an idea for a new feature or have found a bug, please open an issue or submit a pull request on the GitHub repository.
 
+> [!TIP]
+> Run the `init.py` initialization script to set up your development environment. It installs a pre-push hook that runs `typos` and `clippy` to help maintain code quality and consistency. Ensure that you have the `typos-cli` installed and available in your PATH for the pre-push hook to work correctly. You can install it using `cargo install typos-cli`.
+
 ### License
 
 `gitv` is dual-licensed under the MIT License and the Unlicense, at your option. See the [MIT](./LICENSE-MIT) and [Unlicense](./UNLICENSE) for more information.
