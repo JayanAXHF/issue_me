@@ -1,9 +1,12 @@
-use std::{fmt::Display, str::FromStr};
+use std::{env, fs};
+use std::{fmt::Display, path::PathBuf, str::FromStr};
 
-use clap::Parser;
+use anyhow::anyhow;
+use clap::{CommandFactory, Parser};
 use tracing_subscriber::filter::{self, Directive};
 
-use crate::logging::get_data_dir;
+use crate::errors::AppError;
+use crate::logging::{PROJECT_NAME, get_data_dir};
 
 #[derive(Parser)]
 #[clap(author, version = version(), about, long_about = None, styles = get_styles())]
@@ -18,12 +21,12 @@ pub struct Args {
     /// GitHub repository owner or organization (for example: `rust-lang`).
     ///
     /// This is required unless `--print-log-dir` or `--set-token` is provided.
-    #[clap(required_unless_present_any = [ "print_log_dir", "set_token" ])]
+    #[clap(required_unless_present_any = [ "print_log_dir", "set_token", "generate_man" ])]
     pub owner: Option<String>,
     /// GitHub repository name under `owner` (for example: `rust`).
     ///
     /// This is required unless `--print-log-dir` or `--set-token` is provided.
-    #[clap(required_unless_present_any = [ "print_log_dir", "set_token" ])]
+    #[clap(required_unless_present_any = [ "print_log_dir", "set_token", "generate_man" ])]
     pub repo: Option<String>,
     /// Global logging verbosity used by the application logger.
     ///
@@ -38,6 +41,9 @@ pub struct Args {
     /// When provided, this command updates the saved token value.
     #[clap(long, short)]
     pub set_token: Option<String>,
+    /// Generate man pages using clap-mangen and exit.
+    #[clap(long)]
+    pub generate_man: bool,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -138,4 +144,31 @@ Author: {author}
 
 Data directory: {data_dir_path}"
     )
+}
+
+pub fn generate_man_pages() -> Result<PathBuf, AppError> {
+    if cfg!(windows) {
+        return Err(AppError::Other(anyhow!(
+            "man page generation is not supported on Windows"
+        )));
+    }
+
+    let cmd = Cli::command();
+
+    let prefix = env::var("PREFIX").unwrap_or("/usr/local".to_string());
+
+    let man1_dir = PathBuf::from(&prefix).join("share/man/man1");
+
+    fs::create_dir_all(&man1_dir)?;
+
+    let man1_file = format!("{}.1", &*PROJECT_NAME).to_lowercase();
+    let mut man1_fd = fs::File::create(man1_dir.join(&man1_file))?;
+
+    // Write them to the correct directories
+
+    clap_mangen::Man::new(cmd).render(&mut man1_fd)?;
+    println!("Installed manpages:");
+    println!("  {}/share/man/man1/{}", prefix, man1_file);
+
+    Ok(man1_dir.join(man1_file))
 }
