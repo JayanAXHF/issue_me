@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use octocrab::models::IssueState;
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Direction, Layout as RtLayout, Rect},
     prelude::Widget,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span, Text},
     widgets::{Block, Paragraph, Wrap},
 };
@@ -14,7 +14,7 @@ use ratatui_macros::line;
 
 use crate::{
     errors::AppError,
-    ui::{Action, AppState, components::DumbComponent, layout::Layout},
+    ui::{Action, AppState, components::DumbComponent, layout::Layout, widgets::link::Link},
 };
 
 #[derive(Debug, Clone)]
@@ -88,9 +88,36 @@ impl IssuePreview {
             .border_type(ratatui::widgets::BorderType::Rounded)
             .title("Issue Info");
 
+        let inner = block.inner(area.issue_preview);
+        block.render(area.issue_preview, buf);
+
+        let mut sections = vec![Constraint::Min(1)];
+        if self
+            .current
+            .as_ref()
+            .and_then(|seed| seed.pull_request_url.as_ref())
+            .is_some()
+        {
+            sections.push(Constraint::Length(1));
+        }
+        let split = RtLayout::default()
+            .direction(Direction::Vertical)
+            .constraints(sections)
+            .split(inner);
+
         let text = self.build_text();
-        let widget = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
-        widget.render(area.issue_preview, buf);
+        let widget = Paragraph::new(text).wrap(Wrap { trim: true });
+        widget.render(split[0], buf);
+
+        if let Some(seed) = &self.current
+            && let Some(pr_url) = &seed.pull_request_url
+            && split.len() > 1
+        {
+            let label = format!("Open #{} on GitHub", seed.number);
+            Link::new(label, pr_url.as_ref())
+                .fallback_suffix(" (link)")
+                .render(split[1], buf);
+        }
     }
 
     fn build_text(&self) -> Text<'_> {
@@ -165,12 +192,6 @@ impl IssuePreview {
                 Span::raw(" "),
                 Span::styled("(this issue is a PR)", Style::new().green()),
             ]));
-            if let Some(pr_url) = &seed.pull_request_url {
-                lines.push(Line::from(vec![
-                    Span::styled("  url: ", label_style),
-                    Span::styled(pr_url.as_ref(), Style::new().fg(Color::Blue)),
-                ]));
-            }
         } else {
             lines.push(Line::from(vec![
                 Span::styled("Open PRs: ", label_style),
