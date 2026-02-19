@@ -1,5 +1,8 @@
 # gitv
 
+[![Built With Ratatui](https://ratatui.rs/built-with-ratatui/badge.svg)](https://ratatui.rs/)
+![crates.io](https://img.shields.io/crates/v/gitv-tui)
+
 > [!NOTE]
 >
 > Following in the footsteps of the `g`lobal `r`egex `e`xpression `p`rint `grep`, I introduce to you `g`ithub `i`ssues `t`ui `v`iewer `gitv`.
