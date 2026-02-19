@@ -26,7 +26,7 @@ crossterm = { version = "0.29.0", features = ["event-stream"] }
 directories = "6.0.0"
 edit = "0.1.5"
 futures = "0.3.31"
-hyperrat = { path = "crates/hyperrat" }
+hyperrat = { path = "crates/hyperrat", version = "0.1.0" }
 inquire = "0.9.3"
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native"] }
 octocrab = "0.49.5"
