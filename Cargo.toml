@@ -1,6 +1,6 @@
 [package]
 name = "gitv-tui"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 build = "build.rs"
 description = "A terminal-based GitHub client built with Rust and Ratatui."
@@ -26,7 +26,7 @@ crossterm = { version = "0.29.0", features = ["event-stream"] }
 directories = "6.0.0"
 edit = "0.1.5"
 futures = "0.3.31"
-hyperrat = { path = "crates/hyperrat", version = "0.1.0" }
+hyperrat = { path = "crates/hyperrat", version = "0.1.1" }
 inquire = "0.9.3"
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native"] }
 octocrab = "0.49.5"

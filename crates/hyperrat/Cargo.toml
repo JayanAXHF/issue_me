@@ -1,7 +1,7 @@
 [package]
 name = "hyperrat"
 description = "An OSC 8 link widget for ratatui that doesn't break your UI"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["JayanAXHF <sunil.chdry@gmail.com>"]
 license = "Unlicense OR MIT"
