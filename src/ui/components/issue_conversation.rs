@@ -533,27 +533,41 @@ impl IssueConversation {
 
         let line_offset = self.body_paragraph_state.line_offset();
         for link in &render.links {
+            let start = link.label.len() - link.label.trim_start_matches(char::is_whitespace).len();
+            let end = link.label.trim_end_matches(char::is_whitespace).len();
+            let trimmed_label = if start < end {
+                &link.label[start..end]
+            } else {
+                continue;
+            };
+            let leading_ws_width = display_width(&link.label[..start]);
+            let link_col = link.col + leading_ws_width;
+            let link_width = display_width(trimmed_label);
+            if link_width == 0 {
+                continue;
+            }
+
             if link.line < line_offset {
                 continue;
             }
 
             let local_y = link.line - line_offset;
-            if local_y >= inner.height as usize || link.col >= inner.width as usize {
+            if local_y >= inner.height as usize || link_col >= inner.width as usize {
                 continue;
             }
 
-            let available = (inner.width as usize).saturating_sub(link.col);
+            let available = (inner.width as usize).saturating_sub(link_col);
             if available == 0 {
                 continue;
             }
 
             let link_area = Rect {
-                x: inner.x + link.col as u16,
+                x: inner.x + link_col as u16,
                 y: inner.y + local_y as u16,
-                width: (available.min(link.width)) as u16,
+                width: (available.min(link_width)) as u16,
                 height: 1,
             };
-            Link::new(link.label.as_str(), link.url.as_str())
+            Link::new(trimmed_label, link.url.as_str())
                 .style(
                     Style::new()
                         .fg(Color::Blue)
@@ -2245,7 +2259,9 @@ impl MarkdownRenderer {
             let space_col = self.current_width;
             self.current_line.push(Span::raw(" "));
             self.current_width += 1;
-            self.push_link_segment(" ", space_col, 1);
+            if self.should_attach_space_to_active_link(space_col) {
+                self.push_link_segment(" ", space_col, 1);
+            }
         }
         self.pending_space = false;
 
@@ -2301,6 +2317,16 @@ impl MarkdownRenderer {
             url: url.clone(),
             width,
         });
+    }
+
+    fn should_attach_space_to_active_link(&self, space_col: usize) -> bool {
+        let Some(url) = self.active_link_url.as_ref() else {
+            return false;
+        };
+        let line = self.current_line_index();
+        self.links.last().is_some_and(|last| {
+            last.url == *url && last.line == line && last.col + last.width == space_col
+        })
     }
 
     fn current_line_index(&self) -> usize {
@@ -2526,6 +2552,14 @@ fn syntect_style_to_ratatui(style: syntect::highlighting::Style) -> Style {
 mod tests {
     use super::render_markdown;
 
+    fn line_text(rendered: &super::MarkdownRender, idx: usize) -> String {
+        rendered.lines[idx]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect()
+    }
+
     #[test]
     fn extracts_link_segments_with_urls() {
         let rendered = render_markdown("Go to [ratatui docs](https://github.com/ratatui/).", 80, 0);
@@ -2544,5 +2578,16 @@ mod tests {
         let rendered = render_markdown("[A very long linked label](https://example.com)", 12, 2);
 
         assert!(rendered.links.len() >= 2);
+    }
+
+    #[test]
+    fn keeps_spaces_around_plain_links() {
+        let rendered = render_markdown("left https://google.com right", 80, 0);
+
+        assert_eq!(line_text(&rendered, 0), "left https://google.com right");
+        assert!(rendered
+            .links
+            .iter()
+            .all(|link| !link.label.starts_with(' ') && !link.label.ends_with(' ')));
     }
 }
