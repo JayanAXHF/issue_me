@@ -2,10 +2,11 @@ use async_trait::async_trait;
 use crossterm::event;
 use futures::{StreamExt, stream};
 use octocrab::models::{
-    CommentId, IssueState, issues::Comment as ApiComment, reactions::ReactionContent,
+    CommentId, Event as IssueEvent, IssueState, issues::Comment as ApiComment,
+    reactions::ReactionContent, timelines::TimelineEvent,
 };
 use pulldown_cmark::{
-    BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag, TagEnd, TextMergeStream,
+    BlockQuoteKind, CodeBlockKind, Event as MdEvent, Options, Parser, Tag, TagEnd, TextMergeStream,
 };
 use rat_cursor::HasScreenCursor;
 use rat_widget::{
@@ -57,6 +58,7 @@ pub const HELP: &[HelpElementKind] = &[
     crate::help_text!("Issue Conversation Help"),
     crate::help_keybind!("Up/Down", "select issue body/comment entry"),
     crate::help_keybind!("PageUp/PageDown/Home/End", "scroll message body pane"),
+    crate::help_keybind!("t", "toggle timeline events"),
     crate::help_keybind!("f", "toggle fullscreen body view"),
     crate::help_keybind!("C", "close selected issue"),
     crate::help_keybind!("Enter (popup)", "confirm close reason"),
@@ -94,6 +96,7 @@ pub struct IssueConversationSeed {
     pub number: u64,
     pub author: Arc<str>,
     pub created_at: Arc<str>,
+    pub created_ts: i64,
     pub body: Option<Arc<str>>,
     pub title: Option<Arc<str>>,
 }
@@ -104,6 +107,7 @@ impl IssueConversationSeed {
             number: issue.number,
             author: Arc::<str>::from(issue.user.login.as_str()),
             created_at: Arc::<str>::from(issue.created_at.format("%Y-%m-%d %H:%M").to_string()),
+            created_ts: issue.created_at.timestamp(),
             body: issue.body.as_ref().map(|b| Arc::<str>::from(b.as_str())),
             title: Some(Arc::<str>::from(issue.title.as_str())),
         }
@@ -115,6 +119,7 @@ pub struct CommentView {
     pub id: u64,
     pub author: Arc<str>,
     pub created_at: Arc<str>,
+    pub created_ts: i64,
     pub body: Arc<str>,
     pub reactions: Option<Vec<(ReactionContent, u64)>>,
     pub my_reactions: Option<Vec<ReactionContent>>,
@@ -127,10 +132,62 @@ impl CommentView {
             id: comment.id.0,
             author: Arc::<str>::from(comment.user.login.as_str()),
             created_at: Arc::<str>::from(comment.created_at.format("%Y-%m-%d %H:%M").to_string()),
+            created_ts: comment.created_at.timestamp(),
             body: Arc::<str>::from(body),
             reactions: None,
             my_reactions: None,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TimelineEventView {
+    pub id: u64,
+    pub created_at: Arc<str>,
+    pub created_ts: i64,
+    pub actor: Arc<str>,
+    pub event: IssueEvent,
+    pub icon: &'static str,
+    pub summary: Arc<str>,
+    pub details: Arc<str>,
+}
+
+impl TimelineEventView {
+    fn from_api(event: TimelineEvent, fallback_id: u64) -> Option<Self> {
+        if matches!(
+            event.event,
+            IssueEvent::Commented | IssueEvent::LineCommented | IssueEvent::CommentDeleted
+        ) {
+            return None;
+        }
+
+        let id = event.id.map(|id| id.0).unwrap_or(fallback_id);
+        let when = event.created_at.or(event.updated_at).or(event.submitted_at);
+        let created_ts = when.map(|d| d.timestamp()).unwrap_or(0);
+        let created_at = Arc::<str>::from(
+            when.map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "unknown time".to_string()),
+        );
+        let actor = event
+            .actor
+            .as_ref()
+            .or(event.user.as_ref())
+            .map(|a| Arc::<str>::from(a.login.as_str()))
+            .unwrap_or_else(|| Arc::<str>::from("github"));
+        let (icon, action) = timeline_event_meta(&event.event);
+        let details = timeline_event_details(&event);
+        let summary = Arc::<str>::from(format!("{} {}", actor.as_ref(), action));
+
+        Some(Self {
+            id,
+            created_at,
+            created_ts,
+            actor,
+            event: event.event,
+            icon,
+            summary,
+            details: Arc::<str>::from(details),
+        })
     }
 }
 
@@ -140,21 +197,26 @@ pub struct IssueConversation {
     current: Option<IssueConversationSeed>,
     cache_number: Option<u64>,
     cache_comments: Vec<CommentView>,
+    timeline_cache_number: Option<u64>,
+    cache_timeline: Vec<TimelineEventView>,
     markdown_cache: HashMap<u64, MarkdownRender>,
     body_cache: Option<MarkdownRender>,
     body_cache_number: Option<u64>,
     markdown_width: usize,
     loading: HashSet<u64>,
+    timeline_loading: HashSet<u64>,
     posting: bool,
     error: Option<String>,
     post_error: Option<String>,
     reaction_error: Option<String>,
     close_error: Option<String>,
+    timeline_error: Option<String>,
     owner: String,
     repo: String,
     current_user: String,
     list_state: ListState<RowSelection>,
     message_keys: Vec<MessageKey>,
+    show_timeline: bool,
     input_state: TextAreaState,
     throbber_state: ThrobberState,
     post_throbber_state: ThrobberState,
@@ -180,6 +242,7 @@ enum InputState {
 enum MessageKey {
     IssueBody(u64),
     Comment(u64),
+    Timeline(u64),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -234,22 +297,27 @@ impl IssueConversation {
             current: None,
             cache_number: None,
             cache_comments: Vec::new(),
+            timeline_cache_number: None,
+            cache_timeline: Vec::new(),
             markdown_cache: HashMap::new(),
             paragraph_state: Default::default(),
             body_cache: None,
             body_cache_number: None,
             markdown_width: 0,
             loading: HashSet::new(),
+            timeline_loading: HashSet::new(),
             posting: false,
             error: None,
             post_error: None,
             reaction_error: None,
             close_error: None,
+            timeline_error: None,
             owner: app_state.owner,
             repo: app_state.repo,
             current_user: app_state.current_user,
             list_state: ListState::default(),
             message_keys: Vec::new(),
+            show_timeline: false,
             input_state: TextAreaState::new(),
             textbox_state: InputState::default(),
             throbber_state: ThrobberState::default(),
@@ -296,6 +364,11 @@ impl IssueConversation {
 
         if !self.is_loading_current() {
             let mut title = format!("[{}] Conversation", self.index);
+            title.push_str(if self.show_timeline {
+                " | Timeline: ON"
+            } else {
+                " | Timeline: OFF"
+            });
             if let Some(prompt) = self.reaction_mode_prompt() {
                 title.push_str(" | ");
                 title.push_str(&prompt);
@@ -303,6 +376,9 @@ impl IssueConversation {
                 title.push_str(" | ");
                 title.push_str(err);
             } else if let Some(err) = &self.close_error {
+                title.push_str(" | ");
+                title.push_str(err);
+            } else if let Some(err) = &self.timeline_error {
                 title.push_str(" | ");
                 title.push_str(err);
             }
@@ -443,20 +519,50 @@ impl IssueConversation {
                 self.cache_comments.len(),
                 seed.number
             );
-            for comment in &self.cache_comments {
-                let body_lines = self
-                    .markdown_cache
-                    .entry(comment.id)
-                    .or_insert_with(|| render_markdown(comment.body.as_ref(), width, 2));
-                items.push(build_comment_preview_item(
-                    comment.author.as_ref(),
-                    comment.created_at.as_ref(),
-                    &body_lines.lines,
-                    preview_width,
-                    comment.author.as_ref() == self.current_user,
-                    comment.reactions.as_deref(),
-                ));
-                self.message_keys.push(MessageKey::Comment(comment.id));
+            let mut merged = self
+                .cache_comments
+                .iter()
+                .map(|comment| (comment.created_ts, MessageKey::Comment(comment.id)))
+                .collect::<Vec<_>>();
+
+            if self.show_timeline && self.timeline_cache_number == Some(seed.number) {
+                merged.extend(
+                    self.cache_timeline
+                        .iter()
+                        .map(|entry| (entry.created_ts, MessageKey::Timeline(entry.id))),
+                );
+            }
+            merged.sort_by_key(|(created_ts, _)| *created_ts);
+
+            for (_, key) in merged {
+                match key {
+                    MessageKey::Comment(comment_id) => {
+                        if let Some(comment) =
+                            self.cache_comments.iter().find(|c| c.id == comment_id)
+                        {
+                            let body_lines =
+                                self.markdown_cache.entry(comment.id).or_insert_with(|| {
+                                    render_markdown(comment.body.as_ref(), width, 2)
+                                });
+                            items.push(build_comment_preview_item(
+                                comment.author.as_ref(),
+                                comment.created_at.as_ref(),
+                                &body_lines.lines,
+                                preview_width,
+                                comment.author.as_ref() == self.current_user,
+                                comment.reactions.as_deref(),
+                            ));
+                            self.message_keys.push(MessageKey::Comment(comment.id));
+                        }
+                    }
+                    MessageKey::Timeline(event_id) => {
+                        if let Some(entry) = self.cache_timeline.iter().find(|e| e.id == event_id) {
+                            items.push(build_timeline_item(entry, preview_width));
+                            self.message_keys.push(MessageKey::Timeline(entry.id));
+                        }
+                    }
+                    MessageKey::IssueBody(_) => {}
+                }
             }
         }
 
@@ -473,15 +579,20 @@ impl IssueConversation {
 
     fn render_body(&mut self, body_area: Rect, buf: &mut Buffer) {
         let selected_body = self.selected_body_render().cloned();
-        let body_lines: Vec<Line<'static>> = selected_body
-            .as_ref()
-            .map(|v| v.lines.clone())
-            .unwrap_or_else(|| {
-                vec![Line::from(vec![Span::styled(
-                    "Select a message to view full content.".to_string(),
-                    Style::new().dim(),
-                )])]
-            });
+        let selected_timeline = self.selected_timeline().cloned();
+        let body_lines: Vec<Line<'static>> = if let Some(entry) = selected_timeline.as_ref() {
+            build_timeline_body_lines(entry)
+        } else {
+            selected_body
+                .as_ref()
+                .map(|v| v.lines.clone())
+                .unwrap_or_else(|| {
+                    vec![Line::from(vec![Span::styled(
+                        "Select a message to view full content.".to_string(),
+                        Style::new().dim(),
+                    )])]
+                })
+        };
 
         let body = Paragraph::new(body_lines)
             .block(
@@ -516,6 +627,16 @@ impl IssueConversation {
                 }
             }
             MessageKey::Comment(id) => self.markdown_cache.get(id),
+            MessageKey::Timeline(_) => None,
+        }
+    }
+
+    fn selected_timeline(&self) -> Option<&TimelineEventView> {
+        let selected = self.list_state.selected_checked()?;
+        let key = self.message_keys.get(selected)?;
+        match key {
+            MessageKey::Timeline(id) => self.cache_timeline.iter().find(|entry| entry.id == *id),
+            _ => None,
         }
     }
 
@@ -582,6 +703,7 @@ impl IssueConversation {
         match self.message_keys.get(selected)? {
             MessageKey::Comment(id) => Some(*id),
             MessageKey::IssueBody(_) => None,
+            MessageKey::Timeline(_) => None,
         }
     }
 
@@ -915,9 +1037,14 @@ impl IssueConversation {
     }
 
     fn is_loading_current(&self) -> bool {
-        self.current
-            .as_ref()
-            .is_some_and(|seed| self.loading.contains(&seed.number))
+        self.current.as_ref().is_some_and(|seed| {
+            self.loading.contains(&seed.number)
+                || (self.show_timeline && self.timeline_loading.contains(&seed.number))
+        })
+    }
+
+    fn has_timeline_for(&self, number: u64) -> bool {
+        self.timeline_cache_number == Some(number)
     }
 
     async fn add_reaction(&mut self, comment_id: u64, content: ReactionContent) {
@@ -1150,6 +1277,60 @@ impl IssueConversation {
         });
     }
 
+    async fn fetch_timeline(&mut self, number: u64) {
+        if self.timeline_loading.contains(&number) {
+            return;
+        }
+        let Some(action_tx) = self.action_tx.clone() else {
+            return;
+        };
+        let owner = self.owner.clone();
+        let repo = self.repo.clone();
+        self.timeline_loading.insert(number);
+        self.timeline_error = None;
+
+        tokio::spawn(async move {
+            let Some(client) = GITHUB_CLIENT.get() else {
+                let _ = action_tx
+                    .send(Action::IssueTimelineError {
+                        number,
+                        message: "GitHub client not initialized.".to_string(),
+                    })
+                    .await;
+                return;
+            };
+            let handler = client.inner().issues(owner, repo);
+            match handler
+                .list_timeline_events(number)
+                .per_page(100u8)
+                .page(1u32)
+                .send()
+                .await
+            {
+                Ok(mut page) => {
+                    let events = std::mem::take(&mut page.items)
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(idx, event)| {
+                            TimelineEventView::from_api(event, (number << 32) | idx as u64)
+                        })
+                        .collect::<Vec<_>>();
+                    let _ = action_tx
+                        .send(Action::IssueTimelineLoaded { number, events })
+                        .await;
+                }
+                Err(err) => {
+                    let _ = action_tx
+                        .send(Action::IssueTimelineError {
+                            number,
+                            message: err.to_string().replace('\n', " "),
+                        })
+                        .await;
+                }
+            }
+        });
+    }
+
     async fn send_comment(&mut self, number: u64, body: String) {
         let Some(action_tx) = self.action_tx.clone() else {
             return;
@@ -1229,6 +1410,25 @@ impl Component for IssueConversation {
                 }
 
                 match event {
+                    event::Event::Key(key)
+                        if key.code == event::KeyCode::Char('t')
+                            && key.modifiers == event::KeyModifiers::NONE
+                            && (self.list_state.is_focused()
+                                || self.body_paragraph_state.is_focused()) =>
+                    {
+                        self.show_timeline = !self.show_timeline;
+                        self.timeline_error = None;
+                        if self.show_timeline
+                            && let Some(seed) = self.current.as_ref()
+                            && !self.has_timeline_for(seed.number)
+                        {
+                            self.fetch_timeline(seed.number).await;
+                        }
+                        if let Some(tx) = self.action_tx.clone() {
+                            let _ = tx.send(Action::ForceRender).await;
+                        }
+                        return Ok(());
+                    }
                     event::Event::Key(key)
                         if key.code == event::KeyCode::Char('f')
                             && key.modifiers == event::KeyModifiers::NONE
@@ -1443,6 +1643,7 @@ impl Component for IssueConversation {
                 self.close_error = None;
                 self.reaction_mode = None;
                 self.close_popup = None;
+                self.timeline_error = None;
                 self.body_cache = None;
                 self.body_cache_number = Some(number);
                 self.body_paragraph_state.set_line_offset(0);
@@ -1451,11 +1652,22 @@ impl Component for IssueConversation {
                     self.cache_comments.clear();
                     self.markdown_cache.clear();
                 }
+                if self.timeline_cache_number != Some(number) {
+                    self.timeline_cache_number = None;
+                    self.cache_timeline.clear();
+                }
                 if self.cache_number == Some(number) {
                     self.loading.remove(&number);
                     self.error = None;
                 } else {
                     self.fetch_comments(number).await;
+                }
+                if self.show_timeline {
+                    if self.has_timeline_for(number) {
+                        self.timeline_loading.remove(&number);
+                    } else {
+                        self.fetch_timeline(number).await;
+                    }
                 }
             }
             Action::IssueCommentsLoaded { number, comments } => {
@@ -1514,6 +1726,23 @@ impl Component for IssueConversation {
                 self.loading.remove(&number);
                 if self.current.as_ref().is_some_and(|s| s.number == number) {
                     self.error = Some(message);
+                }
+            }
+            Action::IssueTimelineLoaded { number, events } => {
+                self.timeline_loading.remove(&number);
+                if self.current.as_ref().is_some_and(|s| s.number == number) {
+                    self.timeline_cache_number = Some(number);
+                    self.cache_timeline = events;
+                    self.timeline_error = None;
+                    if let Some(action_tx) = self.action_tx.as_ref() {
+                        let _ = action_tx.send(Action::ForceRender).await;
+                    }
+                }
+            }
+            Action::IssueTimelineError { number, message } => {
+                self.timeline_loading.remove(&number);
+                if self.current.as_ref().is_some_and(|s| s.number == number) {
+                    self.timeline_error = Some(message);
                 }
             }
             Action::IssueCommentPostError { number, message } => {
@@ -1750,11 +1979,11 @@ fn build_comment_item(
     let header = Line::from(vec![
         Span::styled(author.to_string(), author_style),
         Span::raw("  "),
-        Span::styled(created_at.to_string(), Style::new().dim()),
+        Span::styled(created_at.to_string(), Style::new()),
     ]);
     let preview_line = Line::from(vec![
         Span::raw("  "),
-        Span::styled(preview.to_string(), Style::new().dim()),
+        Span::styled(preview.to_string(), Style::new()),
     ]);
     let mut lines = vec![header, preview_line];
     if let Some(reactions) = reactions
@@ -1777,6 +2006,54 @@ fn build_comment_preview_item(
     build_comment_item(author, created_at, &preview, is_self, reactions)
 }
 
+fn build_timeline_item(entry: &TimelineEventView, preview_width: usize) -> ListItem<'static> {
+    let icon_style = timeline_event_style(&entry.event).add_modifier(Modifier::DIM);
+    let dim_style = Style::new().dim();
+    let header = Line::from(vec![
+        Span::raw("  "),
+        Span::styled("|", dim_style),
+        Span::raw(" "),
+        Span::styled(
+            entry.icon.to_string(),
+            icon_style.add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" ", dim_style),
+        Span::styled(entry.summary.to_string(), icon_style),
+        Span::styled("  ", dim_style),
+        Span::styled(entry.created_at.to_string(), dim_style),
+    ]);
+    let details = Line::from(vec![
+        Span::raw("  "),
+        Span::styled("|", dim_style),
+        Span::raw("   "),
+        Span::styled(
+            truncate_preview(entry.details.as_ref(), preview_width.max(12)),
+            dim_style,
+        ),
+    ]);
+    ListItem::new(vec![header, details])
+}
+
+fn build_timeline_body_lines(entry: &TimelineEventView) -> Vec<Line<'static>> {
+    vec![
+        Line::from(vec![
+            Span::styled("Event: ", Style::new().dim()),
+            Span::styled(
+                format!("{} {}", entry.icon, entry.summary),
+                timeline_event_style(&entry.event),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("When: ", Style::new().dim()),
+            Span::raw(entry.created_at.to_string()),
+        ]),
+        Line::from(vec![
+            Span::styled("Details: ", Style::new().dim()),
+            Span::styled(entry.details.to_string(), Style::new().fg(Color::Gray)),
+        ]),
+    ]
+}
+
 fn build_reactions_line(reactions: &[(ReactionContent, u64)]) -> Line<'static> {
     let mut ordered = reactions.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|(content, _)| reaction_order(content));
@@ -1794,6 +2071,165 @@ fn build_reactions_line(reactions: &[(ReactionContent, u64)]) -> Line<'static> {
         spans.push(Span::styled(count.to_string(), Style::new().dim()));
     }
     Line::from(spans)
+}
+
+fn timeline_event_meta(event: &IssueEvent) -> (&'static str, &'static str) {
+    match event {
+        IssueEvent::Closed => ("x", "closed the issue"),
+        IssueEvent::Reopened => ("o", "reopened the issue"),
+        IssueEvent::Assigned => ("@", "assigned someone"),
+        IssueEvent::Unassigned => ("@", "unassigned someone"),
+        IssueEvent::Labeled => ("#", "added a label"),
+        IssueEvent::Unlabeled => ("#", "removed a label"),
+        IssueEvent::Milestoned => ("M", "set a milestone"),
+        IssueEvent::Demilestoned => ("M", "removed the milestone"),
+        IssueEvent::Locked => ("!", "locked the conversation"),
+        IssueEvent::Unlocked => ("!", "unlocked the conversation"),
+        IssueEvent::Referenced | IssueEvent::CrossReferenced => ("=>", "referenced this issue"),
+        IssueEvent::Renamed => ("~", "renamed the title"),
+        IssueEvent::ReviewRequested => ("R", "requested review"),
+        IssueEvent::ReviewRequestRemoved => ("R", "removed review request"),
+        IssueEvent::Merged => ("+", "merged"),
+        IssueEvent::Committed => ("*", "pushed a commit"),
+        _ => ("*", "updated the timeline"),
+    }
+}
+
+fn timeline_event_style(event: &IssueEvent) -> Style {
+    match event {
+        IssueEvent::Closed | IssueEvent::Locked => Style::new().fg(Color::Red),
+        IssueEvent::Reopened | IssueEvent::Unlocked => Style::new().fg(Color::Green),
+        IssueEvent::Labeled | IssueEvent::Unlabeled => Style::new().fg(Color::Yellow),
+        IssueEvent::Assigned | IssueEvent::Unassigned => Style::new().fg(Color::Cyan),
+        IssueEvent::Merged => Style::new().fg(Color::Magenta),
+        _ => Style::new().fg(Color::Blue),
+    }
+}
+
+fn timeline_event_details(event: &TimelineEvent) -> String {
+    match event.event {
+        IssueEvent::Labeled | IssueEvent::Unlabeled => {
+            if let Some(label) = event.label.as_ref() {
+                return format!("label: {}", label.name);
+            }
+        }
+        IssueEvent::Milestoned | IssueEvent::Demilestoned => {
+            if let Some(milestone) = event.milestone.as_ref() {
+                return format!("milestone: {}", milestone.title);
+            }
+        }
+        IssueEvent::Renamed => {
+            if let Some(rename) = event.rename.as_ref() {
+                return format!("title: '{}' -> '{}'", rename.from, rename.to);
+            }
+        }
+        IssueEvent::Assigned | IssueEvent::Unassigned => {
+            if let Some(assignee) = event.assignee.as_ref() {
+                return format!("assignee: @{}", assignee.login);
+            }
+            if let Some(assignees) = event.assignees.as_ref()
+                && !assignees.is_empty()
+            {
+                let names = assignees
+                    .iter()
+                    .map(|a| format!("@{}", a.login))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return format!("assignees: {}", names);
+            }
+        }
+        IssueEvent::ReviewRequested | IssueEvent::ReviewRequestRemoved => {
+            if let Some(reviewer) = event.requested_reviewer.as_ref() {
+                return format!("reviewer: @{}", reviewer.login);
+            }
+        }
+        IssueEvent::Closed
+        | IssueEvent::Merged
+        | IssueEvent::Referenced
+        | IssueEvent::Committed => {
+            if let Some(reference) = format_reference_target(event) {
+                return reference;
+            }
+            if let Some(commit_id) = event.commit_id.as_ref() {
+                let short = commit_id.chars().take(8).collect::<String>();
+                return format!("commit {}", short);
+            }
+            if let Some(sha) = event.sha.as_ref() {
+                let short = sha.chars().take(8).collect::<String>();
+                return format!("sha {}", short);
+            }
+        }
+        IssueEvent::CrossReferenced | IssueEvent::Connected | IssueEvent::Disconnected => {
+            if let Some(reference) = format_reference_target(event) {
+                return reference;
+            }
+        }
+        _ => {}
+    }
+
+    if let Some(assignee) = event.assignee.as_ref() {
+        return format!("assignee: @{}", assignee.login);
+    }
+    if let Some(assignees) = event.assignees.as_ref()
+        && !assignees.is_empty()
+    {
+        let names = assignees
+            .iter()
+            .map(|a| format!("@{}", a.login))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!("assignees: {}", names);
+    }
+    if let Some(commit_id) = event.commit_id.as_ref() {
+        let short = commit_id.chars().take(8).collect::<String>();
+        return format!("commit {}", short);
+    }
+    if let Some(reference) = format_reference_target(event) {
+        return reference;
+    }
+    if let Some(column) = event.column_name.as_ref() {
+        if let Some(prev) = event.previous_column_name.as_ref() {
+            return format!("moved from '{}' to '{}'", prev, column);
+        }
+        return format!("project column: {}", column);
+    }
+    if let Some(reason) = event.lock_reason.as_ref() {
+        return format!("lock reason: {}", reason);
+    }
+    if let Some(message) = event.message.as_ref()
+        && !message.trim().is_empty()
+    {
+        return truncate_preview(message.trim(), 96);
+    }
+    if let Some(body) = event.body.as_ref()
+        && !body.trim().is_empty()
+    {
+        return truncate_preview(body.trim(), 96);
+    }
+    format!("{:?}", event.event)
+}
+
+fn format_reference_target(event: &TimelineEvent) -> Option<String> {
+    if let Some(url) = event.pull_request_url.as_ref() {
+        if let Some(number) = extract_trailing_number(url.as_str()) {
+            return Some(format!("pull request #{}", number));
+        }
+        return Some(format!("pull request {}", url));
+    }
+
+    if let Some(url) = event.issue_url.as_deref() {
+        if let Some(number) = extract_trailing_number(url) {
+            return Some(format!("issue #{}", number));
+        }
+        return Some(format!("issue {}", url));
+    }
+
+    None
+}
+
+fn extract_trailing_number(url: &str) -> Option<u64> {
+    let tail = url.trim_end_matches('/').rsplit('/').next()?;
+    tail.parse::<u64>().ok()
 }
 
 fn reaction_order(content: &ReactionContent) -> usize {
@@ -1936,16 +2372,16 @@ fn render_markdown(text: &str, width: usize, indent: usize) -> MarkdownRender {
     let parser = TextMergeStream::new(parser);
     for event in parser {
         match event {
-            Event::Start(tag) => renderer.start_tag(tag),
-            Event::End(tag) => renderer.end_tag(tag),
-            Event::Text(text) => renderer.text(&text),
-            Event::Code(text) => renderer.inline_code(&text),
-            Event::InlineMath(text) | Event::DisplayMath(text) => renderer.inline_math(&text),
-            Event::SoftBreak => renderer.soft_break(),
-            Event::HardBreak => renderer.hard_break(),
-            Event::Html(text) | Event::InlineHtml(text) => renderer.text(&text),
-            Event::Rule => renderer.rule(),
-            Event::TaskListMarker(checked) => renderer.task_list_marker(checked),
+            MdEvent::Start(tag) => renderer.start_tag(tag),
+            MdEvent::End(tag) => renderer.end_tag(tag),
+            MdEvent::Text(text) => renderer.text(&text),
+            MdEvent::Code(text) => renderer.inline_code(&text),
+            MdEvent::InlineMath(text) | MdEvent::DisplayMath(text) => renderer.inline_math(&text),
+            MdEvent::SoftBreak => renderer.soft_break(),
+            MdEvent::HardBreak => renderer.hard_break(),
+            MdEvent::Html(text) | MdEvent::InlineHtml(text) => renderer.text(&text),
+            MdEvent::Rule => renderer.rule(),
+            MdEvent::TaskListMarker(checked) => renderer.task_list_marker(checked),
             _ => {}
         }
     }
@@ -2585,9 +3021,11 @@ mod tests {
         let rendered = render_markdown("left https://google.com right", 80, 0);
 
         assert_eq!(line_text(&rendered, 0), "left https://google.com right");
-        assert!(rendered
-            .links
-            .iter()
-            .all(|link| !link.label.starts_with(' ') && !link.label.ends_with(' ')));
+        assert!(
+            rendered
+                .links
+                .iter()
+                .all(|link| !link.label.starts_with(' ') && !link.label.ends_with(' '))
+        );
     }
 }

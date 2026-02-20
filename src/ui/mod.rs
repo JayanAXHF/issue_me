@@ -57,7 +57,7 @@ use tracing::{error, info, instrument, trace};
 use anyhow::anyhow;
 
 use crate::ui::components::{
-    issue_conversation::{CommentView, IssueConversationSeed},
+    issue_conversation::{CommentView, IssueConversationSeed, TimelineEventView},
     issue_detail::{IssuePreviewSeed, PrSummary},
 };
 
@@ -570,6 +570,14 @@ pub enum Action {
     IssueCommentsLoaded {
         number: u64,
         comments: Vec<CommentView>,
+    },
+    IssueTimelineLoaded {
+        number: u64,
+        events: Vec<TimelineEventView>,
+    },
+    IssueTimelineError {
+        number: u64,
+        message: String,
     },
     IssueReactionsLoaded {
         reactions: HashMap<u64, Vec<(ReactionContent, u64)>>,
