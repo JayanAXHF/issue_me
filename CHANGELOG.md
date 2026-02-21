@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/JayanAXHF/gitv/compare/gitv-tui-v0.2.0...gitv-tui-v0.2.1) - 2026-02-21
+
+### Other
+
+- remove freebsd due to some incompatibility
+
 ## [0.2.0](https://github.com/JayanAXHF/gitv/compare/gitv-tui-v0.1.2...gitv-tui-v0.2.0) - 2026-02-21
 
 ### Added
