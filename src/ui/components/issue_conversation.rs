@@ -1459,7 +1459,10 @@ impl Component for IssueConversation {
                         }
                         return Ok(());
                     }
-                    ct_event!(key press 'l') => {
+                    ct_event!(key press 'l')
+                        if self.body_paragraph_state.is_focused()
+                            || self.list_state.is_focused() =>
+                    {
                         let Some(current) = self.current.as_ref() else {
                             return Ok(());
                         };
