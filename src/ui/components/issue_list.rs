@@ -50,6 +50,7 @@ pub const HELP: &[HelpElementKind] = &[
     crate::help_keybind!("Up/Down", "navigate issues"),
     crate::help_keybind!("Enter", "view issue details"),
     crate::help_keybind!("C", "close selected issue"),
+    crate::help_keybind!("l", "copy issue link to clipboard"),
     crate::help_keybind!("Enter (popup)", "confirm close reason"),
     crate::help_keybind!("a", "add assignee(s)"),
     crate::help_keybind!("A", "remove assignee(s)"),
@@ -530,63 +531,82 @@ impl Component for IssueList<'_> {
                 if self.handle_close_popup_event(event).await {
                     return Ok(());
                 }
-                if matches!(event, ct_event!(key press 'a')) && self.list_state.is_focused() {
-                    self.inner_state = IssueListState::AssigningInput;
-                    self.assignment_mode = AssignmentMode::Add;
-                    self.assign_input_state.set_text("");
-                    self.assign_input_state.focus.set(true);
-                    self.list_state.focus.set(false);
-                    return Ok(());
-                }
-                if matches!(event, ct_event!(key press SHIFT-'A')) && self.list_state.is_focused() {
-                    self.inner_state = IssueListState::AssigningInput;
-                    self.assignment_mode = AssignmentMode::Remove;
-                    self.assign_input_state.set_text("");
-                    self.assign_input_state.focus.set(true);
-                    self.list_state.focus.set(false);
-                    return Ok(());
-                }
-                if matches!(event, ct_event!(key press 'n')) && self.list_state.is_focused() {
-                    self.action_tx
-                        .as_ref()
-                        .ok_or_else(|| {
-                            AppError::Other(anyhow!("issue list action channel unavailable"))
-                        })?
-                        .send(crate::ui::Action::EnterIssueCreate)
-                        .await
-                        .map_err(|_| AppError::TokioMpsc)?;
-                    self.action_tx
-                        .as_ref()
-                        .ok_or_else(|| {
-                            AppError::Other(anyhow!("issue list action channel unavailable"))
-                        })?
-                        .send(crate::ui::Action::ChangeIssueScreen(
-                            MainScreen::CreateIssue,
-                        ))
-                        .await
-                        .map_err(|_| AppError::TokioMpsc)?;
-                    return Ok(());
-                }
-                if matches!(event, ct_event!(key press SHIFT-'C'))
-                    && self.list_state.is_focused()
-                    && self.inner_state == IssueListState::Normal
-                {
-                    self.open_close_popup();
-                    return Ok(());
-                }
-                if matches!(event, ct_event!(keycode press Esc))
-                    && self.inner_state == IssueListState::AssigningInput
-                {
-                    self.assign_input_state.set_text("");
-                    self.inner_state = IssueListState::Normal;
-                    self.list_state.focus.set(true);
-                    if let Some(action_tx) = self.action_tx.as_ref() {
-                        action_tx
-                            .send(Action::ForceRender)
+
+                match event {
+                    ct_event!(key press 'a') if self.list_state.is_focused() => {
+                        self.inner_state = IssueListState::AssigningInput;
+                        self.assignment_mode = AssignmentMode::Add;
+                        self.assign_input_state.set_text("");
+                        self.assign_input_state.focus.set(true);
+                        self.list_state.focus.set(false);
+                        return Ok(());
+                    }
+                    ct_event!(key press SHIFT-'A') if self.list_state.is_focused() => {
+                        self.inner_state = IssueListState::AssigningInput;
+                        self.assignment_mode = AssignmentMode::Remove;
+                        self.assign_input_state.set_text("");
+                        self.assign_input_state.focus.set(true);
+                        self.list_state.focus.set(false);
+                        return Ok(());
+                    }
+                    ct_event!(key press 'n') if self.list_state.is_focused() => {
+                        self.action_tx
+                            .as_ref()
+                            .ok_or_else(|| {
+                                AppError::Other(anyhow!("issue list action channel unavailable"))
+                            })?
+                            .send(crate::ui::Action::EnterIssueCreate)
                             .await
                             .map_err(|_| AppError::TokioMpsc)?;
+                        self.action_tx
+                            .as_ref()
+                            .ok_or_else(|| {
+                                AppError::Other(anyhow!("issue list action channel unavailable"))
+                            })?
+                            .send(crate::ui::Action::ChangeIssueScreen(
+                                MainScreen::CreateIssue,
+                            ))
+                            .await
+                            .map_err(|_| AppError::TokioMpsc)?;
+                        return Ok(());
                     }
-                    return Ok(());
+                    ct_event!(key press SHIFT-'C')
+                        if self.list_state.is_focused()
+                            && self.inner_state == IssueListState::Normal =>
+                    {
+                        self.open_close_popup();
+                        return Ok(());
+                    }
+                    ct_event!(keycode press Esc)
+                        if self.inner_state == IssueListState::AssigningInput =>
+                    {
+                        self.assign_input_state.set_text("");
+                        self.inner_state = IssueListState::Normal;
+                        self.list_state.focus.set(true);
+                        if let Some(action_tx) = self.action_tx.as_ref() {
+                            action_tx
+                                .send(Action::ForceRender)
+                                .await
+                                .map_err(|_| AppError::TokioMpsc)?;
+                        }
+                        return Ok(());
+                    }
+
+                    ct_event!(key press 'l') if self.list_state.is_focused() => {
+                        let Some(selected) = self.list_state.selected_checked() else {
+                            return Ok(());
+                        };
+                        let issue = &self.issues[selected].0;
+                        let link = format!(
+                            "https://github.com/{}/{}/issues/{}",
+                            self.owner, self.repo, issue.number
+                        );
+
+                        cli_clipboard::set_contents(link)
+                            .map_err(|_| anyhow!("Error copying to clipboard"))?;
+                    }
+
+                    _ => {}
                 }
                 if matches!(event, ct_event!(keycode press Enter))
                     && self.inner_state == IssueListState::AssigningInput

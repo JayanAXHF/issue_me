@@ -46,6 +46,7 @@ tracing = "0.1.44"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 syntect = { version = "5.3.0", default-features = false, features = ["parsing", "default-syntaxes", "default-themes", "regex-fancy"] }
+cli-clipboard = "0.4.0"
 
 [profile.release]
 codegen-units = 1 # Allows compiler to perform better optimization.

@@ -13,6 +13,7 @@
 - `Enter` - view issue details
 - `C` - close selected issue
 - `Enter (popup)` - confirm close reason
+- `l` - copy issue URL to clipboard
 - `a` - add assignee(s)
 - `A` - remove assignee(s)
 - `n` - create new issue
@@ -27,6 +28,7 @@
 - `Enter (popup)` - confirm close reason
 - `Ctrl+P` - toggle comment input/preview
 - `e` - edit selected comment in external editor
+- `l` - copy selected issue/comment URL to clipboard
 - `r` - add reaction to selected comment
 - `R` - remove reaction from selected comment
 - `>` - quote selected comment in comment input

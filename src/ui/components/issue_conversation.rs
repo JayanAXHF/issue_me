@@ -61,6 +61,7 @@ pub const HELP: &[HelpElementKind] = &[
     crate::help_keybind!("t", "toggle timeline events"),
     crate::help_keybind!("f", "toggle fullscreen body view"),
     crate::help_keybind!("C", "close selected issue"),
+    crate::help_keybind!("l", "copy link to selected message"),
     crate::help_keybind!("Enter (popup)", "confirm close reason"),
     crate::help_keybind!("Ctrl+P", "toggle comment input/preview"),
     crate::help_keybind!("e", "edit selected comment in external editor"),
@@ -1449,6 +1450,42 @@ impl Component for IssueConversation {
                             let _ = tx.send(Action::ForceRender).await;
                         }
                         return Ok(());
+                    }
+                    ct_event!(key press 'l') => {
+                        let Some(current) = self.current.as_ref() else {
+                            return Ok(());
+                        };
+                        let Some(selected_idx) = self.list_state.selected_checked() else {
+                            return Ok(());
+                        };
+
+                        let Some(selected) = self.message_keys.get(selected_idx) else {
+                            return Ok(());
+                        };
+
+                        match selected {
+                            MessageKey::IssueBody(i) => {
+                                assert_eq!(*i, current.number);
+                                let link = format!(
+                                    "https://github.com/{}/{}/issues/{}",
+                                    self.owner, self.repo, i
+                                );
+                                cli_clipboard::set_contents(link)
+                                    .map_err(|_| anyhow!("Error copying to clipboard"))?;
+                            }
+                            MessageKey::Comment(id) => {
+                                let link = format!(
+                                    "https://github.com/{}/{}/issues/{}#issuecomment-{}",
+                                    self.owner, self.repo, current.number, id
+                                );
+
+                                cli_clipboard::set_contents(link)
+                                    .map_err(|_| anyhow!("Error copying to clipboard"))?;
+                            }
+                            _ => {
+                                return Ok(());
+                            }
+                        }
                     }
                     event::Event::Key(key)
                         if key.code == event::KeyCode::Char('f')
