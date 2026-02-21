@@ -260,6 +260,7 @@ impl ToastPosition {
                 width,
                 height,
             },
+        }
     }
 }
 

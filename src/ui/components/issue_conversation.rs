@@ -46,8 +46,10 @@ use crate::{
             Component,
             help::HelpElementKind,
             issue_list::{IssueClosePopupState, MainScreen, render_issue_close_popup},
+            toast::{ToastPosition, ToastType},
         },
         layout::Layout,
+        toast_action,
         utils::get_border_style,
     },
 };
@@ -1381,6 +1383,9 @@ impl IssueConversation {
                             comment: CommentView::from_api(comment),
                         })
                         .await;
+                    let _ = action_tx
+                        .send(toast_action("Comment Sent!", ToastType::Success))
+                        .await;
                 }
                 Err(err) => {
                     let _ = action_tx
@@ -1388,6 +1393,9 @@ impl IssueConversation {
                             number,
                             message: err.to_string().replace('\n', " "),
                         })
+                        .await;
+                    let _ = action_tx
+                        .send(toast_action("Failed to send comment", ToastType::Error))
                         .await;
                 }
             }
@@ -1486,6 +1494,17 @@ impl Component for IssueConversation {
                                 return Ok(());
                             }
                         }
+                        if let Some(tx) = self.action_tx.clone() {
+                            tx.send(Action::ToastAction(
+                                crate::ui::components::toast::ToastMessage::Show {
+                                    message: "Copied Link".to_string(),
+                                    toast_type: ToastType::Success,
+                                    position: ToastPosition::TopRight,
+                                },
+                            ))
+                            .await?;
+                            tx.send(Action::ForceRender).await?;
+                        }
                     }
                     event::Event::Key(key)
                         if key.code == event::KeyCode::Char('f')
@@ -1551,10 +1570,7 @@ impl Component for IssueConversation {
                                 "issue conversation action channel unavailable"
                             ))
                         })?;
-                        action_tx
-                            .send(Action::ForceFocusChange)
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                        action_tx.send(Action::ForceFocusChange).await?;
                     }
                     ct_event!(keycode press Esc) if self.body_paragraph_state.is_focused() => {
                         let action_tx = self.action_tx.as_ref().ok_or_else(|| {
@@ -1562,10 +1578,7 @@ impl Component for IssueConversation {
                                 "issue conversation action channel unavailable"
                             ))
                         })?;
-                        action_tx
-                            .send(Action::ForceFocusChangeRev)
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                        action_tx.send(Action::ForceFocusChangeRev).await?;
                     }
                     ct_event!(keycode press Esc) if !self.body_paragraph_state.is_focused() => {
                         if let Some(tx) = self.action_tx.clone() {
@@ -1595,13 +1608,9 @@ impl Component for IssueConversation {
                                 "issue conversation action channel unavailable"
                             ))
                         })?;
-                        action_tx
-                            .send(Action::ForceFocusChange)
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                        action_tx.send(Action::ForceFocusChange).await?;
                     }
                     ct_event!(keycode press CONTROL-Enter) | ct_event!(keycode press ALT-Enter) => {
-                        trace!("Enter pressed");
                         let Some(seed) = &self.current else {
                             return Ok(());
                         };
@@ -1653,10 +1662,7 @@ impl Component for IssueConversation {
                                     "issue conversation action channel unavailable"
                                 ))
                             })?;
-                            action_tx
-                                .send(Action::ForceRender)
-                                .await
-                                .map_err(|_| AppError::TokioMpsc)?;
+                            action_tx.send(Action::ForceRender).await?;
                         }
                         if o == TextOutcome::TextChanged || o2 == Outcome::Changed {
                             trace!("Input changed, forcing re-render");
@@ -1665,10 +1671,7 @@ impl Component for IssueConversation {
                                     "issue conversation action channel unavailable"
                                 ))
                             })?;
-                            action_tx
-                                .send(Action::ForceRender)
-                                .await
-                                .map_err(|_| AppError::TokioMpsc)?;
+                            action_tx.send(Action::ForceRender).await?;
                         }
                     }
                     event::Event::Paste(p) if self.input_state.is_focused() => {
@@ -1678,10 +1681,7 @@ impl Component for IssueConversation {
                                 "issue conversation action channel unavailable"
                             ))
                         })?;
-                        action_tx
-                            .send(Action::ForceRender)
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                        action_tx.send(Action::ForceRender).await?;
                     }
                     _ => {}
                 }
@@ -1741,10 +1741,7 @@ impl Component for IssueConversation {
                     let action_tx = self.action_tx.as_ref().ok_or_else(|| {
                         AppError::Other(anyhow!("issue conversation action channel unavailable"))
                     })?;
-                    action_tx
-                        .send(Action::ForceRender)
-                        .await
-                        .map_err(|_| AppError::TokioMpsc)?;
+                    action_tx.send(Action::ForceRender).await?;
                 }
             }
             Action::IssueReactionsLoaded {
@@ -1842,10 +1839,7 @@ impl Component for IssueConversation {
                         self.patch_comment(issue_number, comment_id, trimmed.to_string())
                             .await;
                         if let Some(action_tx) = self.action_tx.as_ref() {
-                            action_tx
-                                .send(Action::ForceRender)
-                                .await
-                                .map_err(|_| AppError::TokioMpsc)?;
+                            action_tx.send(Action::ForceRender).await?;
                         }
                     }
                     Err(message) => {

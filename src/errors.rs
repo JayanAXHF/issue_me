@@ -1,4 +1,5 @@
 use thiserror::Error;
+use tokio::sync::mpsc::error::SendError;
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -22,6 +23,12 @@ pub enum AppError {
     ErrorSettingGlobal(&'static str),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl<T> From<SendError<T>> for AppError {
+    fn from(_: SendError<T>) -> Self {
+        AppError::TokioMpsc
+    }
 }
 
 pub type Result<T, E = AppError> = std::result::Result<T, E>;

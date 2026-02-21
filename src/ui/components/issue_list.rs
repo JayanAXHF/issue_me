@@ -4,8 +4,11 @@ use crate::{
     ui::{
         Action, CloseIssueReason, MergeStrategy,
         components::{
-            Component, help::HelpElementKind, issue_conversation::IssueConversationSeed,
+            Component,
+            help::HelpElementKind,
+            issue_conversation::IssueConversationSeed,
             issue_detail::IssuePreviewSeed,
+            toast::{ToastPosition, ToastType},
         },
         layout::Layout,
         utils::get_border_style,
@@ -556,8 +559,7 @@ impl Component for IssueList<'_> {
                                 AppError::Other(anyhow!("issue list action channel unavailable"))
                             })?
                             .send(crate::ui::Action::EnterIssueCreate)
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                            .await?;
                         self.action_tx
                             .as_ref()
                             .ok_or_else(|| {
@@ -566,8 +568,7 @@ impl Component for IssueList<'_> {
                             .send(crate::ui::Action::ChangeIssueScreen(
                                 MainScreen::CreateIssue,
                             ))
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                            .await?;
                         return Ok(());
                     }
                     ct_event!(key press SHIFT-'C')
@@ -584,10 +585,7 @@ impl Component for IssueList<'_> {
                         self.inner_state = IssueListState::Normal;
                         self.list_state.focus.set(true);
                         if let Some(action_tx) = self.action_tx.as_ref() {
-                            action_tx
-                                .send(Action::ForceRender)
-                                .await
-                                .map_err(|_| AppError::TokioMpsc)?;
+                            action_tx.send(Action::ForceRender).await?;
                         }
                         return Ok(());
                     }
@@ -604,6 +602,17 @@ impl Component for IssueList<'_> {
 
                         cli_clipboard::set_contents(link)
                             .map_err(|_| anyhow!("Error copying to clipboard"))?;
+                        if let Some(tx) = self.action_tx.as_ref() {
+                            tx.send(Action::ToastAction(
+                                crate::ui::components::toast::ToastMessage::Show {
+                                    message: "Copied Link to Clipboard".to_string(),
+                                    toast_type: ToastType::Success,
+                                    position: ToastPosition::TopRight,
+                                },
+                            ))
+                            .await?;
+                            tx.send(Action::ForceRender).await?;
+                        }
                     }
 
                     _ => {}
@@ -681,16 +690,14 @@ impl Component for IssueList<'_> {
                             .send(crate::ui::Action::EnterIssueDetails {
                                 seed: IssueConversationSeed::from_issue(issue),
                             })
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                            .await?;
                         self.action_tx
                             .as_ref()
                             .ok_or_else(|| {
                                 AppError::Other(anyhow!("issue list action channel unavailable"))
                             })?
                             .send(crate::ui::Action::ChangeIssueScreen(MainScreen::Details))
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                            .await?;
                     }
                     return Ok(());
                 }
@@ -752,8 +759,7 @@ impl Component for IssueList<'_> {
                                 number: issue.number,
                                 labels: labels.clone(),
                             })
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                            .await?;
                         self.action_tx
                             .as_ref()
                             .ok_or_else(|| {
@@ -762,8 +768,7 @@ impl Component for IssueList<'_> {
                             .send(crate::ui::Action::SelectedIssuePreview {
                                 seed: IssuePreviewSeed::from_issue(issue),
                             })
-                            .await
-                            .map_err(|_| AppError::TokioMpsc)?;
+                            .await?;
                     }
                 }
             }

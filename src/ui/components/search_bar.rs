@@ -169,12 +169,8 @@ impl TextSearch {
                 .await?;
             action_tx
                 .send(Action::NewPage(Arc::new(page), MergeStrategy::Replace))
-                .await
-                .map_err(|_| AppError::TokioMpsc)?;
-            action_tx
-                .send(Action::FinishedLoading)
-                .await
-                .map_err(|_| AppError::TokioMpsc)?;
+                .await?;
+            action_tx.send(Action::FinishedLoading).await?;
             Ok::<(), crate::errors::AppError>(())
         });
     }

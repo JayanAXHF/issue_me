@@ -764,3 +764,15 @@ fn setup_more_panic_hooks() {
         hook(info);
     }));
 }
+
+fn toast_action(
+    message: impl Into<String>,
+    toast_type: crate::ui::components::toast::ToastType,
+) -> Action {
+    use crate::ui::components::toast::ToastPosition::TopRight;
+    Action::ToastAction(crate::ui::components::toast::ToastMessage::Show {
+        message: message.into(),
+        toast_type,
+        position: TopRight,
+    })
+}

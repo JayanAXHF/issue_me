@@ -31,8 +31,9 @@ use crate::{
     errors::AppError,
     ui::{
         Action, AppState, COLOR_PROFILE,
-        components::{Component, help::HelpElementKind, issue_list::MainScreen},
+        components::{Component, help::HelpElementKind, issue_list::MainScreen, toast::ToastType},
         layout::Layout,
+        toast_action,
         utils::get_border_style,
         widgets::color_picker::{ColorPicker, ColorPickerState},
     },
@@ -738,6 +739,12 @@ impl LabelList {
                     }
                     Err(err) => {
                         let _ = action_tx
+                            .send(toast_action(
+                                format!("Failed to add label: {}", err),
+                                ToastType::Error,
+                            ))
+                            .await;
+                        let _ = action_tx
                             .send(Action::LabelEditError {
                                 message: err.to_string(),
                             })
@@ -747,9 +754,21 @@ impl LabelList {
                 Err(err) => {
                     if LabelList::is_not_found(&err) {
                         let _ = action_tx
+                            .send(toast_action(
+                                format!("Label not found: {}", &name),
+                                ToastType::Warning,
+                            ))
+                            .await;
+                        let _ = action_tx
                             .send(Action::LabelMissing { name: name.clone() })
                             .await;
                     } else {
+                        let _ = action_tx
+                            .send(toast_action(
+                                format!("Failed to add label: {}", err),
+                                ToastType::Error,
+                            ))
+                            .await;
                         let _ = action_tx
                             .send(Action::LabelEditError {
                                 message: err.to_string(),
@@ -1008,6 +1027,17 @@ impl Component for LabelList {
                                                 next_mode = Some(LabelEditMode::Idle);
                                             }
                                             Err(message) => {
+                                                if let Some(action_tx) = &self.action_tx {
+                                                    let _ = action_tx
+                                                        .send(toast_action(
+                                                            format!(
+                                                                "Invalid color: {}",
+                                                                input.text()
+                                                            ),
+                                                            ToastType::Error,
+                                                        ))
+                                                        .await?;
+                                                }
                                                 self.set_status(message);
                                                 skip_input = true;
                                             }

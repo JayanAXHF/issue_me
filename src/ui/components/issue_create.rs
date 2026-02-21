@@ -29,8 +29,10 @@ use crate::{
             issue_conversation::{IssueConversationSeed, render_markdown_lines},
             issue_detail::IssuePreviewSeed,
             issue_list::MainScreen,
+            toast::ToastType,
         },
         layout::Layout,
+        toast_action,
         utils::get_border_style,
     },
 };
@@ -200,12 +202,21 @@ impl IssueCreate {
                             issue: Box::new(issue),
                         })
                         .await;
+                    let _ = action_tx
+                        .send(toast_action(
+                            "Issue Created Successfully!",
+                            ToastType::Success,
+                        ))
+                        .await;
                 }
                 Err(err) => {
                     let _ = action_tx
                         .send(Action::IssueCreateError {
                             message: err.to_string().replace('\n', " "),
                         })
+                        .await;
+                    let _ = action_tx
+                        .send(toast_action("Failed to create issue.", ToastType::Error))
                         .await;
                 }
             }
@@ -395,10 +406,7 @@ impl Component for IssueCreate {
                     let action_tx = self.action_tx.as_ref().ok_or_else(|| {
                         AppError::Other(anyhow!("issue create action channel unavailable"))
                     })?;
-                    action_tx
-                        .send(Action::ForceRender)
-                        .await
-                        .map_err(|_| AppError::TokioMpsc)?;
+                    action_tx.send(Action::ForceRender).await?;
                 }
                 match self.mode {
                     InputMode::Input => {
@@ -415,10 +423,7 @@ impl Component for IssueCreate {
                             let action_tx = self.action_tx.as_ref().ok_or_else(|| {
                                 AppError::Other(anyhow!("issue create action channel unavailable"))
                             })?;
-                            action_tx
-                                .send(Action::ForceRender)
-                                .await
-                                .map_err(|_| AppError::TokioMpsc)?;
+                            action_tx.send(Action::ForceRender).await?;
                         }
                     }
                     InputMode::Preview => {
