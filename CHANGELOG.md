@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/JayanAXHF/gitv/compare/gitv-tui-v0.1.2...gitv-tui-v0.2.0) - 2026-02-21
+
+### Added
+
+- Create a toast engine to allow for toasts
+- add a keybind to copy issue/comment url to the clipboard
+- add support for timeline events
+
+### Fixed
+
+- make subtracting saturating in position calc
+
+### Other
+
+- create continuous deplyoment to add binaries on release
+- add issue number with title in issue conversation
+
 ## [0.1.2](https://github.com/JayanAXHF/gitv/compare/gitv-tui-v0.1.1...gitv-tui-v0.1.2) - 2026-02-19
 
 ### Other
