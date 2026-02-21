@@ -19,11 +19,11 @@ use rat_widget::{
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{self, Block, ListItem, StatefulWidget, Widget},
 };
-use ratatui_macros::{horizontal, line, vertical};
+use ratatui_macros::{horizontal, line, span, vertical};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, OnceLock},
@@ -342,7 +342,28 @@ impl IssueConversation {
         let title = self.title.clone().unwrap_or_default();
         let wrapped_title = wrap(&title, area.main_content.width.saturating_sub(2) as usize);
         let title_para_height = wrapped_title.len() as u16 + 2;
-        let title_para = Text::from_iter(wrapped_title);
+        let last_item = wrapped_title.last();
+        let last_line = last_item
+            .as_ref()
+            .map(|l| {
+                line![
+                    l.to_string(),
+                    span!(
+                        " #{}",
+                        self.current.as_ref().map(|s| s.number).unwrap_or_default()
+                    )
+                    .dim()
+                ]
+            })
+            .unwrap_or_else(|| Line::from(""));
+        let wrapped_title_len = wrapped_title.len() as u16;
+        let title_para = Text::from_iter(
+            wrapped_title
+                .into_iter()
+                .take(wrapped_title_len as usize - 1)
+                .map(Line::from)
+                .chain(std::iter::once(last_line)),
+        );
 
         let areas = vertical![==title_para_height, *=1, ==5].split(area.main_content);
         let title_area = areas[0];
