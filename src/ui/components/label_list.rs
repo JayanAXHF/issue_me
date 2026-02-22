@@ -31,13 +31,14 @@ use crate::{
     errors::AppError,
     ui::{
         Action, AppState, COLOR_PROFILE,
-        components::{Component, help::HelpElementKind, issue_list::MainScreen, toast::ToastType},
+        components::{Component, help::HelpElementKind, issue_list::MainScreen},
         layout::Layout,
         toast_action,
         utils::get_border_style,
         widgets::color_picker::{ColorPicker, ColorPickerState},
     },
 };
+use ratatui_toaster::ToastType;
 
 const MARKER: &str = ratatui::symbols::marker::DOT;
 const STATUS_TTL: Duration = Duration::from_secs(3);

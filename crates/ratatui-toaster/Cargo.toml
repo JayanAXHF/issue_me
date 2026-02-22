@@ -1,0 +1,31 @@
+[package]
+name = "ratatui-toaster"
+description = "An extremely lightweight toast engine for ratatui"
+version = "0.1.0"
+edition = "2024"
+authors = ["JayanAXHF <sunil.chdry@gmail.com>"]
+license = "Unlicense OR MIT"
+homepage = "https://github.com/JayanAXHF/gitv/tree/main/crates/ratatui-toaster"
+repository = "https://github.com/jayanaxhf/gitv/"
+readme = "README.md"
+keywords = ["tui", "cli", "ratatui"]
+categories = ["command-line-utilities", "command-line-interface"]
+
+[dependencies]
+ratatui = { version = "0.30.0", default-features = false, features = ["unstable-widget-ref"] }
+textwrap = "0.16.2"
+tokio = { version = "1.38", features = ["rt-multi-thread"], optional = true }
+
+[features]
+tokio = ["dep:tokio"]
+
+[[example]]
+name = "simple"
+path = "examples/simple.rs"
+
+[dev-dependencies]
+anyhow = "1.0.102"
+tokio = { version = "1.38", features = ["rt-multi-thread", "sync", "time", "macros"] }
+ratatui = { version = "0.30.0" }
+tachyonfx = { version = "0.24.0", default-features = false, features = ["std", "std-duration"] }
+tokio-util = "0.7.18"

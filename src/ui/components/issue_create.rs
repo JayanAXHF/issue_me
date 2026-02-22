@@ -29,7 +29,6 @@ use crate::{
             issue_conversation::{IssueConversationSeed, render_markdown_lines},
             issue_detail::IssuePreviewSeed,
             issue_list::MainScreen,
-            toast::ToastType,
         },
         layout::Layout,
         toast_action,
@@ -37,6 +36,7 @@ use crate::{
     },
 };
 use anyhow::anyhow;
+use ratatui_toaster::ToastType;
 
 pub const HELP: &[HelpElementKind] = &[
     crate::help_text!("Issue Create Help"),

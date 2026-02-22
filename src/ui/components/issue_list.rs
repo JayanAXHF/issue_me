@@ -4,11 +4,8 @@ use crate::{
     ui::{
         Action, CloseIssueReason, MergeStrategy,
         components::{
-            Component,
-            help::HelpElementKind,
-            issue_conversation::IssueConversationSeed,
+            Component, help::HelpElementKind, issue_conversation::IssueConversationSeed,
             issue_detail::IssuePreviewSeed,
-            toast::{ToastPosition, ToastType},
         },
         layout::Layout,
         utils::get_border_style,
@@ -38,6 +35,7 @@ use ratatui::{
     },
 };
 use ratatui_macros::{line, span, vertical};
+use ratatui_toaster::{ToastPosition, ToastType};
 use std::sync::{
     Arc,
     atomic::{AtomicU32, Ordering},
@@ -603,13 +601,11 @@ impl Component for IssueList<'_> {
                         cli_clipboard::set_contents(link)
                             .map_err(|_| anyhow!("Error copying to clipboard"))?;
                         if let Some(tx) = self.action_tx.as_ref() {
-                            tx.send(Action::ToastAction(
-                                crate::ui::components::toast::ToastMessage::Show {
-                                    message: "Copied Link to Clipboard".to_string(),
-                                    toast_type: ToastType::Success,
-                                    position: ToastPosition::TopRight,
-                                },
-                            ))
+                            tx.send(Action::ToastAction(ratatui_toaster::ToastMessage::Show {
+                                message: "Copied Link to Clipboard".to_string(),
+                                toast_type: ToastType::Success,
+                                position: ToastPosition::TopRight,
+                            }))
                             .await?;
                             tx.send(Action::ForceRender).await?;
                         }

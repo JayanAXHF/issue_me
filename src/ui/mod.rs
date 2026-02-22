@@ -20,9 +20,10 @@ use crate::{
         search_bar::TextSearch,
         status_bar::StatusBar,
         title_bar::TitleBar,
-        toast::{ToastBuilder, ToastEngineBuilder, ToastMessage},
     },
 };
+use ratatui_toaster::{ToastBuilder, ToastEngine, ToastEngineBuilder, ToastMessage};
+
 use crossterm::{
     event::{
         DisableBracketedPaste, EnableBracketedPaste, EventStream, KeyEvent,
@@ -113,7 +114,7 @@ pub async fn run(
 struct App {
     action_tx: tokio::sync::mpsc::Sender<Action>,
     action_rx: tokio::sync::mpsc::Receiver<Action>,
-    toast_engine: Option<components::toast::ToastEngine<Action>>,
+    toast_engine: Option<ToastEngine<Action>>,
     focus: Option<Focus>,
     cancel_action: CancellationToken,
     components: Vec<Box<dyn Component>>,
@@ -717,11 +718,11 @@ pub enum Action {
     ForceFocusChangeRev,
     SetHelp(&'static [HelpElementKind]),
     EditorModeChanged(bool),
-    ToastAction(crate::ui::components::toast::ToastMessage),
+    ToastAction(ratatui_toaster::ToastMessage),
 }
 
-impl From<crate::ui::components::toast::ToastMessage> for Action {
-    fn from(value: crate::ui::components::toast::ToastMessage) -> Self {
+impl From<ratatui_toaster::ToastMessage> for Action {
+    fn from(value: ratatui_toaster::ToastMessage) -> Self {
         Self::ToastAction(value)
     }
 }
@@ -800,12 +801,9 @@ fn setup_more_panic_hooks() {
     }));
 }
 
-fn toast_action(
-    message: impl Into<String>,
-    toast_type: crate::ui::components::toast::ToastType,
-) -> Action {
-    use crate::ui::components::toast::ToastPosition::TopRight;
-    Action::ToastAction(crate::ui::components::toast::ToastMessage::Show {
+fn toast_action(message: impl Into<String>, toast_type: ratatui_toaster::ToastType) -> Action {
+    use ratatui_toaster::ToastPosition::TopRight;
+    Action::ToastAction(ratatui_toaster::ToastMessage::Show {
         message: message.into(),
         toast_type,
         position: TopRight,

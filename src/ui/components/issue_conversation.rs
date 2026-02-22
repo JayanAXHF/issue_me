@@ -46,7 +46,6 @@ use crate::{
             Component,
             help::HelpElementKind,
             issue_list::{IssueClosePopupState, MainScreen, render_issue_close_popup},
-            toast::{ToastPosition, ToastType},
         },
         layout::Layout,
         toast_action,
@@ -55,6 +54,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use hyperrat::Link;
+use ratatui_toaster::{ToastPosition, ToastType};
 
 pub const HELP: &[HelpElementKind] = &[
     crate::help_text!("Issue Conversation Help"),
@@ -1498,13 +1498,11 @@ impl Component for IssueConversation {
                             }
                         }
                         if let Some(tx) = self.action_tx.clone() {
-                            tx.send(Action::ToastAction(
-                                crate::ui::components::toast::ToastMessage::Show {
-                                    message: "Copied Link".to_string(),
-                                    toast_type: ToastType::Success,
-                                    position: ToastPosition::TopRight,
-                                },
-                            ))
+                            tx.send(Action::ToastAction(ratatui_toaster::ToastMessage::Show {
+                                message: "Copied Link".to_string(),
+                                toast_type: ToastType::Success,
+                                position: ToastPosition::TopRight,
+                            }))
                             .await?;
                             tx.send(Action::ForceRender).await?;
                         }

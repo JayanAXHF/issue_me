@@ -15,6 +15,8 @@ categories = ["command-line-utilities", "command-line-interface"]
 [workspace]
 members = [
 	"crates/hyperrat"
+,
+	"crates/ratatui-toaster"
 ]
 
 [dependencies]
@@ -36,10 +38,11 @@ rat-cursor = "2.0.0"
 rat-widget = "3.1.1"
 ratatui = {version = "0.30.0", features = ["unstable-widget-ref"] }
 ratatui-macros = "0.7.0"
+ratatui-toaster = { path = "crates/ratatui-toaster", version = "0.1.0", features = ["tokio"] }
 termprofile = { version = "0.2.0", features = ["convert", "ratatui"] }
 textwrap = { version = "0.16.2", features = ["terminal_size"] }
 thiserror = "2.0.18"
-throbber-widgets-tui = "0.10.0"
+throbber-widgets-tui = "0.11.0"
 tokio = { version = "1.38", features = ["macros", "rt-multi-thread"] }
 tokio-util = "0.7.18"
 tracing = "0.1.44"
