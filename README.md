@@ -94,6 +94,9 @@ Options:
       --generate-man
           Generate man pages using clap-mangen and exit
 
+  -e, --env
+          When provided, this command will read the GitHub token from the environment variable
+
   -h, --help
           Print help (see a summary with '-h')
 
