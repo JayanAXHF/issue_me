@@ -1321,7 +1321,7 @@ dependencies = [
 
 [[package]]
 name = "gitv-tui"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
