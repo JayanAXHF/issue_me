@@ -26,6 +26,12 @@
 
 ### Installation
 
+#### Homebrew (macOS)
+
+```bash
+brew install jayanaxhf/taps/gitv
+```
+
 #### Using Cargo
 
 ```bash
