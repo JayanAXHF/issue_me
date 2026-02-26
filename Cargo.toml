@@ -51,6 +51,8 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 syntect = { version = "5.3.0", default-features = false, features = ["parsing", "default-syntaxes", "default-themes", "regex-fancy"] }
 cli-clipboard = "0.4.0"
 tachyonfx = { version = "0.24.0", default-features = false, features = ["std", "std-duration"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 
 [profile.release]
 codegen-units = 1 # Allows compiler to perform better optimization.

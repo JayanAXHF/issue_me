@@ -7,6 +7,7 @@ pub mod widgets;
 
 use crate::{
     app::GITHUB_CLIENT,
+    bookmarks::{Bookmarks, read_bookmarks},
     define_cid_map,
     errors::{AppError, Result},
     ui::components::{
@@ -49,7 +50,7 @@ use std::{
     collections::HashMap,
     fmt::Display,
     io::stdout,
-    sync::{Arc, OnceLock},
+    sync::{Arc, OnceLock, RwLock},
     time::{self},
 };
 use tachyonfx::{EffectManager, Interpolation, fx};
@@ -127,6 +128,7 @@ struct App {
     last_focused: Option<FocusFlag>,
     last_event_error: Option<String>,
     effects_manager: EffectManager<()>,
+    bookmarks: Arc<RwLock<Bookmarks>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -182,6 +184,7 @@ impl App {
         let issue_preview = IssuePreview::new(state.clone());
         let mut issue_conversation = IssueConversation::new(state.clone());
         let mut issue_create = IssueCreate::new(state.clone());
+        let bookmarks = Arc::new(RwLock::new(read_bookmarks()));
         let issue_handler = GITHUB_CLIENT
             .get()
             .ok_or_else(|| AppError::Other(anyhow!("github client is not initialized")))?
@@ -192,6 +195,7 @@ impl App {
             state.owner.clone(),
             state.repo.clone(),
             action_tx.clone(),
+            bookmarks.clone(),
         )
         .await;
 
@@ -215,6 +219,7 @@ impl App {
             action_tx,
             effects_manager,
             action_rx,
+            bookmarks,
             last_focused: None,
             last_event_error: None,
             cancel_action: Default::default(),
@@ -395,8 +400,6 @@ impl App {
                 }
                 Some(Action::Quit) | None => {
                     ctok.cancel();
-
-                    break;
                 }
                 _ => {}
             }
@@ -418,6 +421,15 @@ impl App {
                 }
             }
             if self.cancel_action.is_cancelled() {
+                if let Ok(bm) = self.bookmarks.try_write() {
+                    if let Err(err) = bm.write_to_file() {
+                        error!(error = %err, "failed to write bookmarks to file on shutdown");
+                    } else {
+                        info!("Saved bookmarks to file");
+                    }
+                } else {
+                    error!("failed to acquire write lock for bookmarks on shutdown");
+                }
                 break;
             }
         }
@@ -628,6 +640,21 @@ pub enum Action {
     IssuePreviewError {
         number: u64,
         message: String,
+    },
+    BookmarkTitleLoaded {
+        number: u64,
+        title: Arc<str>,
+    },
+    BookmarkTitleLoadError {
+        number: u64,
+        message: Arc<str>,
+    },
+    BookmarkedIssueLoaded {
+        issue: Box<Issue>,
+    },
+    BookmarkedIssueLoadError {
+        number: u64,
+        message: Arc<str>,
     },
     EnterIssueDetails {
         seed: IssueConversationSeed,
