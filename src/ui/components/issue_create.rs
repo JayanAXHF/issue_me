@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use crossterm::event;
-use octocrab::models::issues::Issue;
 use rat_cursor::HasScreenCursor;
 use rat_widget::{
     event::{HandleEvent, TextOutcome, ct_event},
@@ -30,6 +29,7 @@ use crate::{
             issue_detail::IssuePreviewSeed,
             issue_list::MainScreen,
         },
+        issue_data::{IssueId, UiIssue, UiIssuePool},
         layout::Layout,
         toast_action,
         utils::get_border_style,
@@ -37,6 +37,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use ratatui_toaster::ToastType;
+use std::sync::{Arc, RwLock};
 
 pub const HELP: &[HelpElementKind] = &[
     crate::help_text!("Issue Create Help"),
@@ -67,6 +68,7 @@ pub struct IssueCreate {
     action_tx: Option<tokio::sync::mpsc::Sender<Action>>,
     owner: String,
     repo: String,
+    issue_pool: Arc<RwLock<UiIssuePool>>,
     screen: MainScreen,
     focus: FocusFlag,
     area: Rect,
@@ -86,11 +88,15 @@ pub struct IssueCreate {
 }
 
 impl IssueCreate {
-    pub fn new(AppState { owner, repo, .. }: AppState) -> Self {
+    pub fn new(
+        AppState { owner, repo, .. }: AppState,
+        issue_pool: Arc<RwLock<UiIssuePool>>,
+    ) -> Self {
         Self {
             action_tx: None,
             owner,
             repo,
+            issue_pool,
             screen: MainScreen::List,
             focus: FocusFlag::new().with_name("issue_create"),
             area: Rect::default(),
@@ -171,6 +177,7 @@ impl IssueCreate {
         };
         let owner = self.owner.clone();
         let repo = self.repo.clone();
+        let issue_pool = self.issue_pool.clone();
         self.creating = true;
         self.error = None;
 
@@ -197,10 +204,13 @@ impl IssueCreate {
 
             match create.send().await {
                 Ok(issue) => {
+                    let issue_id = {
+                        let mut pool = issue_pool.write().expect("issue pool lock poisoned");
+                        let compact = UiIssue::from_octocrab(&issue, &mut pool);
+                        pool.upsert_issue(compact)
+                    };
                     let _ = action_tx
-                        .send(Action::IssueCreateSuccess {
-                            issue: Box::new(issue),
-                        })
+                        .send(Action::IssueCreateSuccess { issue_id })
                         .await;
                     let _ = action_tx
                         .send(toast_action(
@@ -223,16 +233,22 @@ impl IssueCreate {
         });
     }
 
-    async fn handle_create_success(&mut self, issue: Issue) {
+    async fn handle_create_success(&mut self, issue_id: IssueId) {
         self.creating = false;
         self.error = None;
         let Some(action_tx) = self.action_tx.clone() else {
             return;
         };
-        let number = issue.number;
-        let labels = issue.labels.clone();
-        let preview_seed = IssuePreviewSeed::from_issue(&issue);
-        let conversation_seed = IssueConversationSeed::from_issue(&issue);
+        let (number, labels, preview_seed, conversation_seed) = {
+            let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+            let issue = pool.get_issue(issue_id);
+            (
+                issue.number,
+                issue.labels.clone(),
+                IssuePreviewSeed::from_ui_issue(issue, &pool),
+                IssueConversationSeed::from_ui_issue(issue, &pool),
+            )
+        };
         self.reset_form();
         let _ = action_tx
             .send(Action::SelectedIssue { number, labels })
@@ -440,9 +456,9 @@ impl Component for IssueCreate {
                 self.screen = MainScreen::CreateIssue;
                 self.reset_form();
             }
-            Action::IssueCreateSuccess { issue } => {
+            Action::IssueCreateSuccess { issue_id } => {
                 if self.screen == MainScreen::CreateIssue {
-                    self.handle_create_success(*issue).await;
+                    self.handle_create_success(issue_id).await;
                 }
             }
             Action::IssueCreateError { message } => {

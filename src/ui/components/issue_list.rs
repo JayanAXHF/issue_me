@@ -8,6 +8,7 @@ use crate::{
             Component, help::HelpElementKind, issue_conversation::IssueConversationSeed,
             issue_detail::IssuePreviewSeed,
         },
+        issue_data::{IssueId, UiIssue, UiIssuePool},
         layout::Layout,
         utils::get_border_style,
     },
@@ -71,6 +72,7 @@ pub const HELP: &[HelpElementKind] = &[
 pub struct IssueList<'a> {
     pub issues: Vec<IssueListItem>,
     pub page: Option<Arc<Page<Issue>>>,
+    issue_pool: Arc<RwLock<UiIssuePool>>,
     pub list_state: rat_widget::list::ListState<RowSelection>,
     pub handler: IssueHandler<'a>,
     pub action_tx: Option<tokio::sync::mpsc::Sender<crate::ui::Action>>,
@@ -180,6 +182,7 @@ impl<'a> IssueList<'a> {
         repo: String,
         tx: tokio::sync::mpsc::Sender<Action>,
         bookmarks: Arc<RwLock<Bookmarks>>,
+        issue_pool: Arc<RwLock<UiIssuePool>>,
     ) -> Self {
         LOADED_ISSUE_COUNT.store(0, Ordering::Relaxed);
         let owner_clone = owner.clone();
@@ -188,7 +191,7 @@ impl<'a> IssueList<'a> {
             let Some(client) = GITHUB_CLIENT.get() else {
                 return;
             };
-            let Ok(mut p) = client
+            let Ok(p) = client
                 .inner()
                 .search()
                 .issues_and_pull_requests(&format!(
@@ -202,8 +205,6 @@ impl<'a> IssueList<'a> {
             else {
                 return;
             };
-            let items = std::mem::take(&mut p.items);
-            p.items = items;
 
             let _ = tx
                 .send(Action::NewPage(Arc::new(p), MergeStrategy::Append))
@@ -211,6 +212,7 @@ impl<'a> IssueList<'a> {
         });
         Self {
             page: None,
+            issue_pool,
             owner,
             bookmarks,
             repo,
@@ -242,9 +244,13 @@ impl<'a> IssueList<'a> {
             self.close_error = Some("No issue selected.".to_string());
             return;
         };
-        let Some(issue) = self.issues.get(selected).map(|item| &item.0) else {
+        let Some(issue_id) = self.issues.get(selected).map(|item| item.0) else {
             self.close_error = Some("No issue selected.".to_string());
             return;
+        };
+        let issue = {
+            let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+            pool.get_issue(issue_id).clone()
         };
         if issue.state == IssueState::Closed {
             self.close_error = Some("Selected issue is already closed.".to_string());
@@ -280,6 +286,7 @@ impl<'a> IssueList<'a> {
         };
         let owner = self.owner.clone();
         let repo = self.repo.clone();
+        let issue_pool = self.issue_pool.clone();
         tokio::spawn(async move {
             let Some(client) = GITHUB_CLIENT.get() else {
                 let _ = action_tx
@@ -299,11 +306,12 @@ impl<'a> IssueList<'a> {
                 .await
             {
                 Ok(issue) => {
-                    let _ = action_tx
-                        .send(Action::IssueCloseSuccess {
-                            issue: Box::new(issue),
-                        })
-                        .await;
+                    let issue_id = {
+                        let mut pool = issue_pool.write().expect("issue pool lock poisoned");
+                        let compact = UiIssue::from_octocrab(&issue, &mut pool);
+                        pool.upsert_issue(compact)
+                    };
+                    let _ = action_tx.send(Action::IssueCloseSuccess { issue_id }).await;
                 }
                 Err(err) => {
                     let _ = action_tx
@@ -473,15 +481,17 @@ impl<'a> IssueList<'a> {
             return Ok(());
         };
 
-        if let Some(issue) = self
-            .issues
-            .iter()
-            .find(|i| i.0.number == number)
-            .map(|i| &i.0)
-        {
-            let labels = issue.labels.clone();
-            let preview_seed = IssuePreviewSeed::from_issue(issue);
-            let conversation_seed = IssueConversationSeed::from_issue(issue);
+        if let Some((labels, preview_seed, conversation_seed)) = {
+            let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+            self.issues.iter().find_map(|item| {
+                let issue = pool.get_issue(item.0);
+                (issue.number == number).then_some((
+                    issue.labels.clone(),
+                    IssuePreviewSeed::from_ui_issue(issue, &pool),
+                    IssueConversationSeed::from_ui_issue(issue, &pool),
+                ))
+            })
+        } {
             self.close_bookmark_popup();
             if let Some(action_tx) = self.action_tx.as_ref() {
                 action_tx
@@ -516,6 +526,7 @@ impl<'a> IssueList<'a> {
         let owner = self.owner.clone();
         let repo = self.repo.clone();
         let cancel = popup.fetch_cancel.clone();
+        let issue_pool = self.issue_pool.clone();
         tokio::spawn(async move {
             let Some(client) = GITHUB_CLIENT.get() else {
                 let _ = action_tx
@@ -537,10 +548,13 @@ impl<'a> IssueList<'a> {
             };
             match issue_result {
                 Ok(issue) => {
+                    let issue_id = {
+                        let mut pool = issue_pool.write().expect("issue pool lock poisoned");
+                        let compact = UiIssue::from_octocrab(&issue, &mut pool);
+                        pool.upsert_issue(compact)
+                    };
                     let _ = action_tx
-                        .send(Action::BookmarkedIssueLoaded {
-                            issue: Box::new(issue),
-                        })
+                        .send(Action::BookmarkedIssueLoaded { issue_id })
                         .await;
                 }
                 Err(err) => {
@@ -689,10 +703,11 @@ impl<'a> IssueList<'a> {
         }
         {
             let bookmarks = self.bookmarks.read().unwrap();
+            let pool = self.issue_pool.read().expect("issue pool lock poisoned");
             let list = rat_widget::list::List::<RowSelection>::new(
                 self.issues
                     .iter()
-                    .map(|issue| self.build_list_item(issue, &bookmarks)),
+                    .map(|issue| self.build_list_item(issue, &bookmarks, &pool)),
             )
             .block(block)
             .style(Style::default())
@@ -744,14 +759,25 @@ impl<'a> IssueList<'a> {
         self.render_bookmark_popup(area.main_content, buf);
     }
 
-    fn build_list_item(&self, issue: &'a IssueListItem, bookmarks: &Bookmarks) -> ListItem<'a> {
+    fn build_list_item(
+        &self,
+        issue: &IssueListItem,
+        bookmarks: &Bookmarks,
+        pool: &UiIssuePool,
+    ) -> ListItem<'static> {
+        let issue = pool.get_issue(issue.0);
         let options = Options::with_termwidth();
-        let binding = issue.body.clone().unwrap_or("No desc provided".to_string());
-        let mut body = wrap(binding.trim(), options);
+        let body_text = pool
+            .resolve_opt_str(issue.body)
+            .unwrap_or("No desc provided");
+        let mut body = wrap(body_text.trim(), options);
         body.truncate(2);
 
         let bookmarked = bookmarks.is_bookmarked(&self.owner, &self.repo, issue.number);
         let bookmark_symbol = if bookmarked { " b " } else { "   " };
+        let title = pool.resolve_str(issue.title);
+        let author = pool.author_login(issue.author);
+        let created_at = pool.resolve_str(issue.created_at_full);
 
         let lines = vec![
             line![
@@ -760,7 +786,7 @@ impl<'a> IssueList<'a> {
                 } else {
                     Style::new()
                 }),
-                span!(issue.title.as_str()),
+                span!(title.to_string()),
                 " ",
                 span!("#{}", issue.number).dim(),
             ],
@@ -773,14 +799,12 @@ impl<'a> IssueList<'a> {
                     }
                 }),
                 "  ",
-                span!(
-                    "Opened by {} at {}",
-                    issue.user.login,
-                    issue.created_at.format("%Y-%m-%d %H:%M:%S")
-                )
-                .dim(),
+                span!(format!("Opened by {author} at {created_at}")).dim(),
             ],
-            line!["   ", span!(body.join(" ")).style(Style::new().dim())],
+            line![
+                "   ",
+                span!(body.join(" ").to_string()).style(Style::new().dim())
+            ],
         ];
         ListItem::new(lines)
     }
@@ -832,21 +856,7 @@ pub(crate) fn render_issue_close_popup(
     }
 }
 
-pub struct IssueListItem(pub Issue);
-
-impl std::ops::Deref for IssueListItem {
-    type Target = Issue;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<Issue> for IssueListItem {
-    fn from(issue: Issue) -> Self {
-        Self(issue)
-    }
-}
+pub struct IssueListItem(pub IssueId);
 
 #[async_trait(?Send)]
 impl Component for IssueList<'_> {
@@ -928,7 +938,11 @@ impl Component for IssueList<'_> {
                     }
                     ct_event!(key press 'b') => {
                         if let Some(selected) = self.list_state.selected_checked() {
-                            let issue = &self.issues[selected].0;
+                            let issue = {
+                                let pool =
+                                    self.issue_pool.read().expect("issue pool lock poisoned");
+                                pool.get_issue(self.issues[selected].0).clone()
+                            };
                             {
                                 let mut bookmarks =
                                     self.bookmarks.write().expect("bookmarks lock poisoned");
@@ -985,7 +999,10 @@ impl Component for IssueList<'_> {
                         let Some(selected) = self.list_state.selected_checked() else {
                             return Ok(());
                         };
-                        let issue = &self.issues[selected].0;
+                        let issue = {
+                            let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                            pool.get_issue(self.issues[selected].0).clone()
+                        };
                         let link = format!(
                             "https://github.com/{}/{}/issues/{}",
                             self.owner, self.repo, issue.number
@@ -1011,7 +1028,10 @@ impl Component for IssueList<'_> {
                     && !self.assign_loading
                     && let Some(selected) = self.list_state.selected_checked()
                 {
-                    let issue = &self.issues[selected].0;
+                    let issue = {
+                        let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                        pool.get_issue(self.issues[selected].0).clone()
+                    };
                     let value: String = self.assign_input_state.value();
                     let mut assignees = value
                         .split(',')
@@ -1070,14 +1090,18 @@ impl Component for IssueList<'_> {
                 }
                 if matches!(event, ct_event!(keycode press Enter)) && self.list_state.is_focused() {
                     if let Some(selected) = self.list_state.selected_checked() {
-                        let issue = &self.issues[selected].0;
+                        let conversation_seed = {
+                            let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                            let issue = pool.get_issue(self.issues[selected].0);
+                            IssueConversationSeed::from_ui_issue(issue, &pool)
+                        };
                         self.action_tx
                             .as_ref()
                             .ok_or_else(|| {
                                 AppError::Other(anyhow!("issue list action channel unavailable"))
                             })?
                             .send(crate::ui::Action::EnterIssueDetails {
-                                seed: IssueConversationSeed::from_issue(issue),
+                                seed: conversation_seed,
                             })
                             .await?;
                         self.action_tx
@@ -1137,16 +1161,23 @@ impl Component for IssueList<'_> {
                                 let _ = tx.send(crate::ui::Action::FinishedLoading).await;
                             });
                         }
-                        let issue = &self.issues[selected].0;
-                        let labels = &issue.labels;
+                        let (issue_number, labels, preview_seed) = {
+                            let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                            let issue = pool.get_issue(self.issues[selected].0);
+                            (
+                                issue.number,
+                                issue.labels.clone(),
+                                IssuePreviewSeed::from_ui_issue(issue, &pool),
+                            )
+                        };
                         self.action_tx
                             .as_ref()
                             .ok_or_else(|| {
                                 AppError::Other(anyhow!("issue list action channel unavailable"))
                             })?
                             .send(crate::ui::Action::SelectedIssue {
-                                number: issue.number,
-                                labels: labels.clone(),
+                                number: issue_number,
+                                labels,
                             })
                             .await?;
                         self.action_tx
@@ -1154,49 +1185,65 @@ impl Component for IssueList<'_> {
                             .ok_or_else(|| {
                                 AppError::Other(anyhow!("issue list action channel unavailable"))
                             })?
-                            .send(crate::ui::Action::SelectedIssuePreview {
-                                seed: IssuePreviewSeed::from_issue(issue),
-                            })
+                            .send(crate::ui::Action::SelectedIssuePreview { seed: preview_seed })
                             .await?;
                     }
                 }
             }
             crate::ui::Action::NewPage(p, merge_strat) => {
                 trace!("New Page with {} issues", p.items.len());
+                let converted = {
+                    let mut pool = self.issue_pool.write().expect("issue pool lock poisoned");
+                    p.items
+                        .iter()
+                        .map(|issue| {
+                            let compact = UiIssue::from_octocrab(issue, &mut pool);
+                            IssueListItem(pool.upsert_issue(compact))
+                        })
+                        .collect::<Vec<_>>()
+                };
                 match merge_strat {
-                    MergeStrategy::Replace => {
-                        self.issues = p.items.iter().cloned().map(IssueListItem).collect()
-                    }
-                    MergeStrategy::Append => self
-                        .issues
-                        .extend(p.items.iter().cloned().map(IssueListItem)),
+                    MergeStrategy::Replace => self.issues = converted,
+                    MergeStrategy::Append => self.issues.extend(converted),
                 }
                 let count = self.issues.len().min(u32::MAX as usize) as u32;
                 LOADED_ISSUE_COUNT.store(count, Ordering::Relaxed);
-                self.page = Some(p);
+                let mut page_meta = (*p).clone();
+                page_meta.items.clear();
+                self.page = Some(Arc::new(page_meta));
                 self.state = LoadingState::Loaded;
             }
             crate::ui::Action::FinishedLoading => {
                 self.state = LoadingState::Loaded;
             }
-            crate::ui::Action::IssueCloseSuccess { issue } => {
-                let issue = *issue;
-                if let Some(existing) = self.issues.iter_mut().find(|i| i.0.number == issue.number)
-                {
-                    existing.0 = issue.clone();
+            crate::ui::Action::IssueCloseSuccess { issue_id } => {
+                let (issue_number, preview_seed) = {
+                    let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                    let compact = pool.get_issue(issue_id);
+                    (
+                        compact.number,
+                        IssuePreviewSeed::from_ui_issue(compact, &pool),
+                    )
+                };
+                let existing_idx = {
+                    let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                    self.issues
+                        .iter()
+                        .position(|item| pool.get_issue(item.0).number == issue_number)
+                };
+                if let Some(existing_idx) = existing_idx {
+                    self.issues[existing_idx].0 = issue_id;
                 }
                 let initiated_here = self
                     .close_popup
                     .as_ref()
-                    .is_some_and(|popup| popup.issue_number == issue.number);
+                    .is_some_and(|popup| popup.issue_number == issue_number);
                 if initiated_here {
                     self.close_popup = None;
                     self.close_error = None;
                     if let Some(action_tx) = self.action_tx.as_ref() {
                         let _ = action_tx
-                            .send(Action::SelectedIssuePreview {
-                                seed: IssuePreviewSeed::from_issue(&issue),
-                            })
+                            .send(Action::SelectedIssuePreview { seed: preview_seed })
                             .await;
                         let _ = action_tx.send(Action::RefreshIssueList).await;
                     }
@@ -1212,8 +1259,15 @@ impl Component for IssueList<'_> {
                 }
             }
             crate::ui::Action::IssueLabelsUpdated { number, labels } => {
-                if let Some(issue) = self.issues.iter_mut().find(|i| i.0.number == number) {
-                    issue.0.labels = labels;
+                let issue_id = {
+                    let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                    self.issues.iter().find_map(|item| {
+                        (pool.get_issue(item.0).number == number).then_some(item.0)
+                    })
+                };
+                if let Some(issue_id) = issue_id {
+                    let mut pool = self.issue_pool.write().expect("issue pool lock poisoned");
+                    pool.get_issue_mut(issue_id).labels = labels;
                 }
             }
             crate::ui::Action::BookmarkTitleLoaded { number, title } => {
@@ -1229,20 +1283,26 @@ impl Component for IssueList<'_> {
                     popup.loading_numbers.remove(&number);
                 }
             }
-            crate::ui::Action::BookmarkedIssueLoaded { issue } => {
-                let issue = *issue;
+            crate::ui::Action::BookmarkedIssueLoaded { issue_id } => {
+                let (issue_number, labels, preview_seed, conversation_seed) = {
+                    let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                    let compact = pool.get_issue(issue_id);
+                    (
+                        compact.number,
+                        compact.labels.clone(),
+                        IssuePreviewSeed::from_ui_issue(compact, &pool),
+                        IssueConversationSeed::from_ui_issue(compact, &pool),
+                    )
+                };
                 let should_open = self
                     .bookmark_popup
                     .as_ref()
-                    .is_some_and(|popup| popup.opening_issue == Some(issue.number));
+                    .is_some_and(|popup| popup.opening_issue == Some(issue_number));
                 if !should_open {
                     return Ok(());
                 }
 
-                let number = issue.number;
-                let labels = issue.labels.clone();
-                let preview_seed = IssuePreviewSeed::from_issue(&issue);
-                let conversation_seed = IssueConversationSeed::from_issue(&issue);
+                let number = issue_number;
                 self.close_bookmark_popup();
 
                 if let Some(action_tx) = self.action_tx.as_ref() {

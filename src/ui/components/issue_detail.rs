@@ -14,7 +14,12 @@ use ratatui_macros::line;
 
 use crate::{
     errors::AppError,
-    ui::{Action, AppState, components::DumbComponent, layout::Layout},
+    ui::{
+        Action, AppState,
+        components::DumbComponent,
+        issue_data::{UiIssue, UiIssuePool},
+        layout::Layout,
+    },
 };
 use hyperrat::Link;
 
@@ -57,6 +62,31 @@ impl IssuePreviewSeed {
                 .pull_request
                 .as_ref()
                 .map(|pr| Arc::<str>::from(pr.html_url.as_str())),
+        }
+    }
+
+    pub fn from_ui_issue(issue: &UiIssue, pool: &UiIssuePool) -> Self {
+        let assignees = issue
+            .assignees
+            .iter()
+            .map(|assignee| Arc::<str>::from(pool.author_login(*assignee)))
+            .collect();
+        let milestone = issue
+            .milestone
+            .map(|milestone| Arc::<str>::from(pool.resolve_str(milestone)));
+        Self {
+            number: issue.number,
+            state: issue.state.clone(),
+            author: Arc::<str>::from(pool.author_login(issue.author)),
+            created_at: Arc::<str>::from(pool.resolve_str(issue.created_at_short)),
+            updated_at: Arc::<str>::from(pool.resolve_str(issue.updated_at_short)),
+            comments: issue.comments,
+            assignees,
+            milestone,
+            is_pull_request: issue.is_pull_request,
+            pull_request_url: issue
+                .pull_request_url
+                .map(|url| Arc::<str>::from(pool.resolve_str(url))),
         }
     }
 }
