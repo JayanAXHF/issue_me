@@ -26,7 +26,7 @@ use ratatui::{
 use ratatui_macros::{horizontal, line, span, vertical};
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, OnceLock},
+    sync::{Arc, OnceLock, RwLock},
 };
 use syntect::{
     easy::HighlightLines,
@@ -47,6 +47,7 @@ use crate::{
             help::HelpElementKind,
             issue_list::{IssueClosePopupState, MainScreen, render_issue_close_popup},
         },
+        issue_data::{UiIssue, UiIssuePool},
         layout::Layout,
         toast_action,
         utils::get_border_style,
@@ -113,6 +114,19 @@ impl IssueConversationSeed {
             created_ts: issue.created_at.timestamp(),
             body: issue.body.as_ref().map(|b| Arc::<str>::from(b.as_str())),
             title: Some(Arc::<str>::from(issue.title.as_str())),
+        }
+    }
+
+    pub fn from_ui_issue(issue: &UiIssue, pool: &UiIssuePool) -> Self {
+        Self {
+            number: issue.number,
+            author: Arc::<str>::from(pool.author_login(issue.author)),
+            created_at: Arc::<str>::from(pool.resolve_str(issue.created_at_short)),
+            created_ts: issue.created_ts,
+            body: issue
+                .body
+                .map(|body| Arc::<str>::from(pool.resolve_str(body))),
+            title: Some(Arc::<str>::from(pool.resolve_str(issue.title))),
         }
     }
 }
@@ -217,6 +231,7 @@ pub struct IssueConversation {
     owner: String,
     repo: String,
     current_user: String,
+    issue_pool: Arc<RwLock<UiIssuePool>>,
     list_state: ListState<RowSelection>,
     message_keys: Vec<MessageKey>,
     show_timeline: bool,
@@ -293,7 +308,7 @@ impl IssueConversation {
         )
     }
 
-    pub fn new(app_state: crate::ui::AppState) -> Self {
+    pub fn new(app_state: crate::ui::AppState, issue_pool: Arc<RwLock<UiIssuePool>>) -> Self {
         Self {
             title: None,
             action_tx: None,
@@ -318,6 +333,7 @@ impl IssueConversation {
             owner: app_state.owner,
             repo: app_state.repo,
             current_user: app_state.current_user,
+            issue_pool,
             list_state: ListState::default(),
             message_keys: Vec::new(),
             show_timeline: false,
@@ -869,6 +885,7 @@ impl IssueConversation {
         };
         let owner = self.owner.clone();
         let repo = self.repo.clone();
+        let issue_pool = self.issue_pool.clone();
         tokio::spawn(async move {
             let Some(client) = GITHUB_CLIENT.get() else {
                 let _ = action_tx
@@ -888,11 +905,12 @@ impl IssueConversation {
                 .await
             {
                 Ok(issue) => {
-                    let _ = action_tx
-                        .send(Action::IssueCloseSuccess {
-                            issue: Box::new(issue),
-                        })
-                        .await;
+                    let issue_id = {
+                        let mut pool = issue_pool.write().expect("issue pool lock poisoned");
+                        let compact = UiIssue::from_octocrab(&issue, &mut pool);
+                        pool.upsert_issue(compact)
+                    };
+                    let _ = action_tx.send(Action::IssueCloseSuccess { issue_id }).await;
                 }
                 Err(err) => {
                     let _ = action_tx
@@ -1868,22 +1886,27 @@ impl Component for IssueConversation {
                     self.markdown_cache.remove(&existing.id);
                 }
             }
-            Action::IssueCloseSuccess { issue } => {
-                let issue = *issue;
+            Action::IssueCloseSuccess { issue_id } => {
+                let (issue_number, preview_seed) = {
+                    let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                    let issue = pool.get_issue(issue_id);
+                    (
+                        issue.number,
+                        crate::ui::components::issue_detail::IssuePreviewSeed::from_ui_issue(
+                            issue, &pool,
+                        ),
+                    )
+                };
                 let initiated_here = self
                     .close_popup
                     .as_ref()
-                    .is_some_and(|popup| popup.issue_number == issue.number);
+                    .is_some_and(|popup| popup.issue_number == issue_number);
                 if initiated_here {
                     self.close_popup = None;
                     self.close_error = None;
                     if let Some(action_tx) = self.action_tx.as_ref() {
                         let _ = action_tx
-                            .send(Action::SelectedIssuePreview {
-                                seed: crate::ui::components::issue_detail::IssuePreviewSeed::from_issue(
-                                    &issue,
-                                ),
-                            })
+                            .send(Action::SelectedIssuePreview { seed: preview_seed })
                             .await;
                         let _ = action_tx.send(Action::RefreshIssueList).await;
                     }

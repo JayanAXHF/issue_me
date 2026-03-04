@@ -1,4 +1,5 @@
 pub mod components;
+pub mod issue_data;
 pub mod layout;
 pub mod macros;
 pub mod theme;
@@ -65,6 +66,7 @@ use crate::ui::components::{
     issue_conversation::{CommentView, IssueConversationSeed, TimelineEventView},
     issue_detail::{IssuePreviewSeed, PrSummary},
 };
+use crate::ui::issue_data::{IssueId, UiIssuePool};
 
 const TICK_RATE: std::time::Duration = std::time::Duration::from_millis(60);
 pub static COLOR_PROFILE: OnceLock<TermProfile> = OnceLock::new();
@@ -182,8 +184,9 @@ impl App {
         let status_bar = StatusBar::new(state.clone());
         let mut label_list = LabelList::new(state.clone());
         let issue_preview = IssuePreview::new(state.clone());
-        let mut issue_conversation = IssueConversation::new(state.clone());
-        let mut issue_create = IssueCreate::new(state.clone());
+        let issue_pool = Arc::new(RwLock::new(UiIssuePool::default()));
+        let mut issue_conversation = IssueConversation::new(state.clone(), issue_pool.clone());
+        let mut issue_create = IssueCreate::new(state.clone(), issue_pool.clone());
         let bookmarks = Arc::new(RwLock::new(read_bookmarks()));
         let issue_handler = GITHUB_CLIENT
             .get()
@@ -196,6 +199,7 @@ impl App {
             state.repo.clone(),
             action_tx.clone(),
             bookmarks.clone(),
+            issue_pool.clone(),
         )
         .await;
 
@@ -650,7 +654,7 @@ pub enum Action {
         message: Arc<str>,
     },
     BookmarkedIssueLoaded {
-        issue: Box<Issue>,
+        issue_id: IssueId,
     },
     BookmarkedIssueLoadError {
         number: u64,
@@ -702,13 +706,13 @@ pub enum Action {
     },
     EnterIssueCreate,
     IssueCreateSuccess {
-        issue: Box<Issue>,
+        issue_id: IssueId,
     },
     IssueCreateError {
         message: String,
     },
     IssueCloseSuccess {
-        issue: Box<Issue>,
+        issue_id: IssueId,
     },
     IssueCloseError {
         number: u64,
