@@ -1,7 +1,15 @@
-# gitv
+<div align="center">
+
+![gitv logo](https://raw.githubusercontent.com/JayanAXHF/gitv/main/assets/logo.svg)
+
+</div>
 
 [![Built With Ratatui](https://ratatui.rs/built-with-ratatui/badge.svg)](https://ratatui.rs/)
 ![crates.io](https://img.shields.io/crates/v/gitv-tui)
+
+---
+
+# gitv
 
 > [!NOTE]
 >
@@ -63,124 +71,126 @@ cargo install --path .
 <details>
   <summary>Flake</summary>
 
-  First add the repository to your inputs.
+First add the repository to your inputs.
 
-  Point to main branch:
-  
-  ```nix
-  inputs = {
-      ...
-      gitv.url = "github:JayanAXHF/gitv";
-      ...
-  };
-  ```
+Point to main branch:
 
-  Point to a rev in main branch:
-
-  ```nix
-  inputs = {
-      ...
-      gitv.url = "github:JayanAXHF/gitv/d70273b05c5e80b05446e4aa0847758e54435d62";
-      ...
-  };
-  ```
-
-  Point to a tag:
-
-  ```nix
-  inputs = {
-      ...
-      gitv.url = "github:JayanAXHF/gitv/refs/tags/gitv-tui-v0.3.2";
-      ...
-  };
-  ```
-    
-  Then your outputs should look something like this:
-  
-  ```nix
-  outputs = {...} @ inputs: { 
-    # Don't forget to add nixpkgs to your inputs
-    nixosConfigurations."nixos" = inputs.nixpkgs.lib.nixosSystem {
-      ...
-      specialArgs = {inherit inputs;};
-      modules = [
-        ./configuration.nix
-        ... 
-      ];
-    };
-  };
-  ```
-  
-  And finally, somewhere in your `configuration.nix`:
-  
-  ```nix
-  {inputs, pkgs, ...}: {
+```nix
+inputs = {
     ...
-    environment.systemPackages = [
-      inputs.gitv.packages.${pkgs.stdenv.hostPlatform.system}.default
+    gitv.url = "github:JayanAXHF/gitv";
+    ...
+};
+```
+
+Point to a rev in main branch:
+
+```nix
+inputs = {
+    ...
+    gitv.url = "github:JayanAXHF/gitv/d70273b05c5e80b05446e4aa0847758e54435d62";
+    ...
+};
+```
+
+Point to a tag:
+
+```nix
+inputs = {
+    ...
+    gitv.url = "github:JayanAXHF/gitv/refs/tags/gitv-tui-v0.3.2";
+    ...
+};
+```
+
+Then your outputs should look something like this:
+
+```nix
+outputs = {...} @ inputs: {
+  # Don't forget to add nixpkgs to your inputs
+  nixosConfigurations."nixos" = inputs.nixpkgs.lib.nixosSystem {
+    ...
+    specialArgs = {inherit inputs;};
+    modules = [
+      ./configuration.nix
+      ...
     ];
-    ...
-  }
-  ```
+  };
+};
+```
+
+And finally, somewhere in your `configuration.nix`:
+
+```nix
+{inputs, pkgs, ...}: {
+  ...
+  environment.systemPackages = [
+    inputs.gitv.packages.${pkgs.stdenv.hostPlatform.system}.default
+  ];
+  ...
+}
+```
+
 </details>
 
 <details>
   <summary>Non-Flake</summary>
-  
-  ##### Pinning Tool
-  
-  First add the pin using your pinning tool.
 
-  We are going to show examples using npins.
+##### Pinning Tool
 
-  Point to a branch:
-  
-  ```bash
-  npins add github JayanAXHF gitv -b main
-  ```
+First add the pin using your pinning tool.
 
-  Point to a rev in main branch:
+We are going to show examples using npins.
 
-  ```bash
-  npins add github JayanAXHF gitv -b main --at d70273b05c5e80b05446e4aa0847758e54435d62
-  ```
+Point to a branch:
 
-  Point to a tag:
+```bash
+npins add github JayanAXHF gitv -b main
+```
 
-  ```bash
-  npins add github JayanAXHF gitv --at gitv-tui-v0.3.2
-  ```
+Point to a rev in main branch:
 
-  Or point to latest release:
+```bash
+npins add github JayanAXHF gitv -b main --at d70273b05c5e80b05446e4aa0847758e54435d62
+```
 
-  ```bash
-  npins add github JayanAXHF gitv
-  ```
-  
-  Then add the package to your `systemPackages`:
-  
-  ```nix
-  let
-    sources = import ./npins;
-  in {
-    environment.systemPackages = [
-      (import sources.gitv {})
-    ];
-  }
-  ```
-  
-  ##### No Pinning Tool
-  
-  ```nix
-  let
-    rev = "d70273b05c5e80b05446e4aa0847758e54435d62";
-    gitv = import (fetchTarball "https://github.com/JayanAXHF/gitv/archive/${rev}.tar.gz") {};
-  in {
-    environment.systemPackages = [
-      gitv
-    ];
-  }
-  ```
+Point to a tag:
+
+```bash
+npins add github JayanAXHF gitv --at gitv-tui-v0.3.2
+```
+
+Or point to latest release:
+
+```bash
+npins add github JayanAXHF gitv
+```
+
+Then add the package to your `systemPackages`:
+
+```nix
+let
+  sources = import ./npins;
+in {
+  environment.systemPackages = [
+    (import sources.gitv {})
+  ];
+}
+```
+
+##### No Pinning Tool
+
+```nix
+let
+  rev = "d70273b05c5e80b05446e4aa0847758e54435d62";
+  gitv = import (fetchTarball "https://github.com/JayanAXHF/gitv/archive/${rev}.tar.gz") {};
+in {
+  environment.systemPackages = [
+    gitv
+  ];
+}
+```
+
 </details>
 
 ### Usage
@@ -245,7 +255,7 @@ Contributions to `gitv` are welcome! If you have an idea for a new feature or ha
 > [!TIP]
 > Run the `init.py` initialization script to set up your development environment. It installs a pre-push hook that runs `typos` and `clippy` to help maintain code quality and consistency. Ensure that you have the `typos-cli` installed and available in your PATH for the pre-push hook to work correctly. You can install it using `cargo install typos-cli`.
 
- [!TIP]
+> [!TIP]
 > If you're using nix then you can use the provided devshell to get your development environment up and running, it also includes the pre-push hook provided. You can do so by executing `direnv allow` or `nix develop`.
 
 ### License
