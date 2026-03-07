@@ -1582,15 +1582,21 @@ impl Component for IssueConversation {
                         self.open_close_popup();
                         return Ok(());
                     }
-                    ct_event!(keycode press Tab) | ct_event!(keycode press BackTab)
-                        if self.input_state.is_focused() =>
-                    {
+                    ct_event!(keycode press Tab) if self.input_state.is_focused() => {
                         let action_tx = self.action_tx.as_ref().ok_or_else(|| {
                             AppError::Other(anyhow!(
                                 "issue conversation action channel unavailable"
                             ))
                         })?;
                         action_tx.send(Action::ForceFocusChange).await?;
+                    }
+                    ct_event!(keycode press SHIFT-BackTab) if self.input_state.is_focused() => {
+                        let action_tx = self.action_tx.as_ref().ok_or_else(|| {
+                            AppError::Other(anyhow!(
+                                "issue conversation action channel unavailable"
+                            ))
+                        })?;
+                        action_tx.send(Action::ForceFocusChangeRev).await?;
                     }
                     ct_event!(keycode press Esc) if self.body_paragraph_state.is_focused() => {
                         let action_tx = self.action_tx.as_ref().ok_or_else(|| {

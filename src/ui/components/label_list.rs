@@ -94,6 +94,16 @@ enum LabelEditMode {
     },
 }
 
+impl LabelEditMode {
+    fn input(&self) -> Option<&TextInputState> {
+        match self {
+            LabelEditMode::Adding { input } => Some(input),
+            LabelEditMode::CreateColor { input, .. } => Some(input),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct PopupLabelSearchState {
     input: TextInputState,
@@ -482,7 +492,6 @@ impl LabelList {
             return;
         }
         let input = TextInputState::new_focused();
-        input.focus.set(true);
         self.state.focus.set(false);
         self.popup_search = Some(PopupLabelSearchState {
             input,
@@ -925,6 +934,7 @@ impl Component for LabelList {
                             match key.code {
                                 crossterm::event::KeyCode::Char('a') => {
                                     if self.state.is_focused() {
+                                        self.state.focus.set(false);
                                         let input = TextInputState::new_focused();
                                         next_mode = Some(LabelEditMode::Adding { input });
                                         handled = true;
@@ -938,6 +948,7 @@ impl Component for LabelList {
                                 }
                                 crossterm::event::KeyCode::Char('f') => {
                                     if self.state.is_focused() {
+                                        self.state.focus.set(false);
                                         self.open_popup_search();
                                         handled = true;
                                     }
@@ -977,6 +988,7 @@ impl Component for LabelList {
                             match key.code {
                                 crossterm::event::KeyCode::Char('y')
                                 | crossterm::event::KeyCode::Char('Y') => {
+                                    self.state.focus.set(false);
                                     let mut input = TextInputState::new_focused();
                                     input.set_text(DEFAULT_COLOR);
                                     let picker = ColorPickerState::with_initial_hex(DEFAULT_COLOR);
@@ -1002,7 +1014,10 @@ impl Component for LabelList {
                         picker,
                     } => {
                         let mut skip_input = false;
-                        if matches!(event, ct_event!(keycode press Tab)) {
+                        if matches!(
+                            event,
+                            ct_event!(keycode press Tab) | ct_event!(keycode press SHIFT-BackTab)
+                        ) {
                             skip_input = true;
                         }
                         if matches!(picker.handle(event, Regular), Outcome::Changed) {
@@ -1227,14 +1242,16 @@ impl Component for LabelList {
 impl HasFocus for LabelList {
     fn build(&self, builder: &mut rat_widget::focus::FocusBuilder) {
         let tag = builder.start(self);
-        builder.widget(&self.state);
+        builder.leaf_widget(&self.state);
         if let Some(popup) = &self.popup_search {
-            builder.widget(&popup.input);
-            builder.widget(&popup.list_state);
+            builder.leaf_widget(&popup.input);
+            builder.leaf_widget(&popup.list_state);
         }
-        if let LabelEditMode::CreateColor { input, picker, .. } = &self.mode {
-            builder.widget(input);
-            builder.widget(picker);
+        if let Some(input) = self.mode.input() {
+            builder.leaf_widget(input);
+        }
+        if let LabelEditMode::CreateColor { picker, .. } = &self.mode {
+            builder.leaf_widget(picker);
         }
         builder.end(tag);
     }
