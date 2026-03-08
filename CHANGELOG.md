@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.3.4] - 2026-03-08
+
+### Bug Fixes
+
+- Fix focus change in color-picker
+
+### Other
+
+- *(CI)* Add benchmark CI job
+
+### Refactor
+
+- Gate bench_support behind feature flag
+
+### Testing
+
+- *(ui)* Add UI snapshot tests for the TUI components
+- *(ui)* Add dummy test data generator
+- Add benchmarks for ui hotspots
 ## [0.3.3] - 2026-03-04
 
 ### Features
