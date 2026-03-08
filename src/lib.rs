@@ -1,5 +1,6 @@
 pub mod app;
 pub mod auth;
+pub mod bench_support;
 pub mod bookmarks;
 pub mod errors;
 pub mod github;
