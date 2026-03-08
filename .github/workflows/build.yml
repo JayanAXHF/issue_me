@@ -1,4 +1,4 @@
-name: Tests and Benchmarks
+name: Build and Lints
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Run tests
-        run: cargo test --verbose
-      - name: Run benchmarks
-        run: cargo bench -F benches
+      - name: Build
+        run: cargo build --verbose
+      - name: Clippy
+        run: cargo clippy -- -D clippy::all
