@@ -61,7 +61,19 @@ lto = "fat" # Enables Link-time Optimization.
 opt-level = "z" # Prioritizes small binary size. Use `3` if you prefer speed.
 strip = true # Ensures debug symbols are removed.
 
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
+
 
 [build-dependencies]
 anyhow = "1.0.101"
 vergen-gix = { version = "9.1.0", features = ["build", "cargo"] }
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[[bench]]
+name = "ui_hotspots"
+harness = false

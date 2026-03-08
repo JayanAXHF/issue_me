@@ -770,8 +770,7 @@ impl<'a> IssueList<'a> {
         let body_text = pool
             .resolve_opt_str(issue.body)
             .unwrap_or("No desc provided");
-        let mut body = wrap(body_text.trim(), options);
-        body.truncate(2);
+        let body_preview = build_issue_body_preview(body_text, options);
 
         let bookmarked = bookmarks.is_bookmarked(&self.owner, &self.repo, issue.number);
         let bookmark_symbol = if bookmarked { " b " } else { "   " };
@@ -801,13 +800,16 @@ impl<'a> IssueList<'a> {
                 "  ",
                 span!(format!("Opened by {author} at {created_at}")).dim(),
             ],
-            line![
-                "   ",
-                span!(body.join(" ").to_string()).style(Style::new().dim())
-            ],
+            line!["   ", span!(body_preview).style(Style::new().dim())],
         ];
         ListItem::new(lines)
     }
+}
+
+pub(crate) fn build_issue_body_preview(body_text: &str, options: Options<'_>) -> String {
+    let mut body = wrap(body_text.trim(), options);
+    body.truncate(2);
+    body.join(" ")
 }
 
 pub(crate) fn render_issue_close_popup(
