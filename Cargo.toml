@@ -18,6 +18,7 @@ members = ["crates/hyperrat", "crates/ratatui-toaster"]
 [features]
 default = ["keyring/linux-native"]
 persist-token = ["keyring/sync-secret-service"]
+benches = []
 
 [dependencies]
 anyhow = "1.0"
@@ -77,3 +78,4 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 [[bench]]
 name = "ui_hotspots"
 harness = false
+required-features = ["benches"]

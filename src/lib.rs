@@ -1,5 +1,6 @@
 pub mod app;
 pub mod auth;
+#[cfg(feature = "benches")]
 pub mod bench_support;
 pub mod bookmarks;
 pub mod errors;
