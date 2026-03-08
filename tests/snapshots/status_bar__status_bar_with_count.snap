@@ -1,0 +1,7 @@
+---
+source: tests/status_bar.rs
+expression: result
+---
+                                                                                
+                                                                                
+ Logged in as testuser   repo/owner  P  ?  HELP  q/<C-q>/<C-c  QUIT  Issues: 42

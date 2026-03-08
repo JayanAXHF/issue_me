@@ -10,15 +10,29 @@ use fake::{
 };
 use octocrab::models::{Event as IssueEvent, IssueState};
 
-use crate::{
-    bench_support::{issue_body_fixture, markdown_fixture},
-    ui::{
-        components::{
-            issue_conversation::{CommentView, IssueConversationSeed, TimelineEventView},
-            issue_detail::IssuePreviewSeed,
-        },
-        issue_data::{AuthorId, IssueId, UiIssue, UiIssuePool},
+#[cfg(feature = "benches")]
+use crate::bench_support::{issue_body_fixture, markdown_fixture};
+
+#[cfg(not(feature = "benches"))]
+mod bench_support {
+    pub fn issue_body_fixture(_seed: u64) -> String {
+        String::new()
+    }
+    pub fn markdown_fixture(_seed: u64) -> String {
+        String::new()
+    }
+}
+
+#[allow(unused_imports)]
+#[cfg(not(feature = "benches"))]
+use bench_support::{issue_body_fixture, markdown_fixture};
+
+use crate::ui::{
+    components::{
+        issue_conversation::{CommentView, IssueConversationSeed, TimelineEventView},
+        issue_detail::IssuePreviewSeed,
     },
+    issue_data::{AuthorId, IssueId, UiIssue, UiIssuePool},
 };
 
 #[derive(Debug, Clone, Copy)]

@@ -99,7 +99,7 @@ pub struct PrSummary {
 }
 
 pub struct IssuePreview {
-    current: Option<IssuePreviewSeed>,
+    pub current: Option<IssuePreviewSeed>,
     action_tx: Option<tokio::sync::mpsc::Sender<Action>>,
     area: Rect,
 }

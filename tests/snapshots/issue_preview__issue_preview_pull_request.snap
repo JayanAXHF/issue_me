@@ -1,0 +1,23 @@
+---
+source: tests/issue_preview.rs
+expression: result
+---
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                            ╭Issue Info╮
+                            │Type: Pull│
+                            │Request   │
+                            │State:    │
+                            │Open      │
+                            │Author:   │
+                            │devuser   │
+                            │]8;;https://github.com/owner/repo/pull/456\Open #4...]8;;\         │
+                            ╰──────────╯

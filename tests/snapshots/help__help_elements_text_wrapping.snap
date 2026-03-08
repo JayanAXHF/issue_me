@@ -1,0 +1,17 @@
+---
+source: tests/help.rs
+expression: result
+---
+                                                  
+                                                  
+                                                  
+                                                  
+             ╭Help───────────────────╮            
+             │    This is a very     │            
+             │   long description    │            
+             │   that should wrap    │            
+             │    properly across    │            
+             │  multiple lines when  │            
+             │    rendered in the    │            
+             │    help component.    │            
+             ╰───────────────────────╯

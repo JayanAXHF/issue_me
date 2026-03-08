@@ -5,9 +5,9 @@ use ratatui::widgets::Widget;
 use ratatui_macros::{line, span};
 use std::sync::atomic::Ordering;
 
-use crate::ui::components::DumbComponent;
 use crate::ui::components::issue_list::LOADED_ISSUE_COUNT;
-use crate::ui::{AppState, layout::Layout};
+use crate::ui::components::DumbComponent;
+use crate::ui::{layout::Layout, AppState};
 
 pub struct StatusBar {
     repo_label: String,

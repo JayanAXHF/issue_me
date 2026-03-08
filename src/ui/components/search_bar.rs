@@ -41,8 +41,8 @@ pub const HELP: &[HelpElementKind] = &[
 ];
 
 pub struct TextSearch {
-    search_state: rat_widget::text_input::TextInputState,
-    label_state: rat_widget::text_input::TextInputState,
+    pub search_state: rat_widget::text_input::TextInputState,
+    pub label_state: rat_widget::text_input::TextInputState,
     cstate: ChoiceState,
     state: State,
     action_tx: Option<tokio::sync::mpsc::Sender<Action>>,
