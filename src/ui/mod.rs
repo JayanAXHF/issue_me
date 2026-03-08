@@ -6,6 +6,9 @@ pub mod theme;
 pub mod utils;
 pub mod widgets;
 
+#[cfg(test)]
+pub(crate) mod testing;
+
 use crate::{
     app::GITHUB_CLIENT,
     bookmarks::{Bookmarks, read_bookmarks},

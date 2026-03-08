@@ -176,8 +176,10 @@ impl TrieStringInterner {
 
 #[cfg(test)]
 mod tests {
-    use super::{AuthorId, TrieStringInterner, UiAuthor, UiIssue, UiIssuePool};
+    use super::TrieStringInterner;
     use octocrab::models::IssueState;
+
+    use crate::ui::testing::{DummyDataConfig, dummy_ui_data_with};
 
     #[test]
     fn trie_interner_reuses_existing_string_ids() {
@@ -198,54 +200,25 @@ mod tests {
         assert_eq!(interner.resolve(long), "opened");
     }
 
-    fn ensure_author(pool: &mut UiIssuePool) -> AuthorId {
-        if let Some(existing) = pool.author_by_github_id.get(&1).copied() {
-            return existing;
-        }
-        let login = pool.intern_str("octo");
-        let key = pool.authors.insert(UiAuthor {
-            github_id: 1,
-            login,
-        });
-        pool.author_by_github_id.insert(1, key);
-        key
-    }
-
-    fn make_issue(pool: &mut UiIssuePool, number: u64, title: &str, state: IssueState) -> UiIssue {
-        let author = ensure_author(pool);
-        let created_at_short = pool.intern_str("2024-01-01 00:00");
-        let created_at_full = pool.intern_str("2024-01-01 00:00:00");
-        let updated_at_short = pool.intern_str("2024-01-01 00:00");
-        UiIssue {
-            number,
-            state,
-            title: pool.intern_str(title),
-            body: Some(pool.intern_str("body")),
-            author,
-            created_ts: 0,
-            created_at_short,
-            created_at_full,
-            updated_at_short,
-            comments: 0,
-            assignees: Vec::new(),
-            milestone: None,
-            is_pull_request: false,
-            pull_request_url: None,
-            labels: Vec::new(),
-        }
-    }
-
     #[test]
     fn upsert_issue_reuses_existing_id() {
-        let mut pool = UiIssuePool::default();
-        let first = make_issue(&mut pool, 42, "open issue", IssueState::Open);
-        let first_id = pool.upsert_issue(first);
-        let second = make_issue(&mut pool, 42, "closed issue", IssueState::Closed);
-        let second_id = pool.upsert_issue(second);
+        let mut data = dummy_ui_data_with(DummyDataConfig {
+            issue_count: 1,
+            author_count: 2,
+            comments_per_issue: 0,
+            timeline_events_per_issue: 0,
+            seed: 7,
+        });
+        let first_id = data.issue_ids[0];
+        let mut second = data.pool.get_issue(first_id).clone();
+        second.state = IssueState::Closed;
+        second.title = data.pool.intern_str("closed issue");
+        let second_id = data.pool.upsert_issue(second);
+
         assert_eq!(first_id, second_id);
-        let stored = pool.get_issue(second_id);
+        let stored = data.pool.get_issue(second_id);
         assert_eq!(stored.state, IssueState::Closed);
-        assert_eq!(pool.resolve_str(stored.title), "closed issue");
+        assert_eq!(data.pool.resolve_str(stored.title), "closed issue");
     }
 }
 
@@ -301,6 +274,18 @@ impl UiIssuePool {
             .get(author)
             .expect("attempted to resolve an unknown author id");
         self.resolve_str(author.login)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn intern_test_author(&mut self, github_id: u64, login: &str) -> AuthorId {
+        if let Some(existing) = self.author_by_github_id.get(&github_id).copied() {
+            return existing;
+        }
+
+        let login = self.intern_str(login);
+        let key = self.authors.insert(UiAuthor { github_id, login });
+        self.author_by_github_id.insert(github_id, key);
+        key
     }
 
     pub fn insert_issue(&mut self, issue: UiIssue) -> IssueId {

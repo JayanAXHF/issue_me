@@ -74,6 +74,7 @@ vergen-gix = { version = "9.1.0", features = ["build", "cargo"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
+fake = "4.4.0"
 
 [[bench]]
 name = "ui_hotspots"
