@@ -11,7 +11,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     allowBuiltinFetchGit = true;
   };
 
-  meta = with lib; {
+  meta = {
     description = "Terminal-based viewer for GitHub issues";
     homepage = "https://github.com/JayanAXHF/gitv";
     license = with lib.licenses; [mit unlicense];
