@@ -54,6 +54,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::trace;
 
 pub static LOADED_ISSUE_COUNT: AtomicU32 = AtomicU32::new(0);
+const DETAILS_PREVIEW_WINDOW_SIZE: usize = 5;
 pub const HELP: &[HelpElementKind] = &[
     crate::help_text!("Issue List Help"),
     crate::help_keybind!("Up/Down", "navigate issues"),
@@ -177,6 +178,23 @@ pub enum MainScreen {
 }
 
 impl<'a> IssueList<'a> {
+    async fn send_issue_list_preview_for_number(&self, number: u64) -> Result<(), AppError> {
+        let issue_ids = {
+            let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+            build_details_preview_issue_ids(&self.issues, &pool, number).unwrap_or_default()
+        };
+
+        if let Some(action_tx) = self.action_tx.as_ref() {
+            action_tx
+                .send(Action::IssueListPreviewUpdated {
+                    issue_ids,
+                    selected_number: number,
+                })
+                .await?;
+        }
+        Ok(())
+    }
+
     pub async fn new(
         handler: IssueHandler<'a>,
         owner: String,
@@ -494,13 +512,14 @@ impl<'a> IssueList<'a> {
             })
         } {
             self.close_bookmark_popup();
-            if let Some(action_tx) = self.action_tx.as_ref() {
+            if let Some(action_tx) = self.action_tx.clone() {
                 action_tx
                     .send(Action::SelectedIssue { number, labels })
                     .await?;
                 action_tx
                     .send(Action::SelectedIssuePreview { seed: preview_seed })
                     .await?;
+                self.send_issue_list_preview_for_number(number).await?;
                 action_tx
                     .send(Action::EnterIssueDetails {
                         seed: conversation_seed,
@@ -764,44 +783,92 @@ impl<'a> IssueList<'a> {
         pool: &UiIssuePool,
     ) -> ListItem<'static> {
         let issue = pool.get_issue(issue.0);
-        let options = Options::with_termwidth();
-        let body_text = pool
-            .resolve_opt_str(issue.body)
-            .unwrap_or("No desc provided");
-        let body_preview = build_issue_body_preview(body_text, options);
-
         let bookmarked = bookmarks.is_bookmarked(&self.owner, &self.repo, issue.number);
-        let bookmark_symbol = if bookmarked { " b " } else { "   " };
-        let title = pool.resolve_str(issue.title);
-        let author = pool.author_login(issue.author);
-        let created_at = pool.resolve_str(issue.created_at_full);
-
-        let lines = vec![
-            line![
-                span!(bookmark_symbol).style(if bookmarked {
-                    Style::new().reversed()
-                } else {
-                    Style::new()
-                }),
-                span!(title.to_string()),
-                " ",
-                span!("#{}", issue.number).dim(),
-            ],
-            line![
-                span!(symbols::shade::FULL).style({
-                    if matches!(issue.state, IssueState::Open) {
-                        Style::new().green()
-                    } else {
-                        Style::new().magenta()
-                    }
-                }),
-                "  ",
-                span!(format!("Opened by {author} at {created_at}")).dim(),
-            ],
-            line!["   ", span!(body_preview).style(Style::new().dim())],
-        ];
-        ListItem::new(lines)
+        build_issue_list_item(issue, pool, bookmarked, true)
     }
+}
+
+pub(crate) fn build_details_preview_issue_ids(
+    issues: &[IssueListItem],
+    pool: &UiIssuePool,
+    selected_number: u64,
+) -> Option<Vec<IssueId>> {
+    let selected_idx = issues
+        .iter()
+        .position(|item| pool.get_issue(item.0).number == selected_number)?;
+    let half_window = DETAILS_PREVIEW_WINDOW_SIZE / 2;
+    let start = selected_idx.saturating_sub(half_window);
+    let end = (start + DETAILS_PREVIEW_WINDOW_SIZE).min(issues.len());
+    let start = end.saturating_sub(DETAILS_PREVIEW_WINDOW_SIZE);
+    Some(issues[start..end].iter().map(|item| item.0).collect())
+}
+
+pub(crate) fn build_issue_list_item(
+    issue: &UiIssue,
+    pool: &UiIssuePool,
+    bookmarked: bool,
+    show_bookmark: bool,
+) -> ListItem<'static> {
+    ListItem::new(build_issue_list_lines(
+        issue,
+        pool,
+        bookmarked,
+        show_bookmark,
+    ))
+}
+
+pub(crate) fn build_issue_list_lines(
+    issue: &UiIssue,
+    pool: &UiIssuePool,
+    bookmarked: bool,
+    show_bookmark: bool,
+) -> Vec<Line<'static>> {
+    let body_text = pool
+        .resolve_opt_str(issue.body)
+        .unwrap_or("No desc provided");
+    let body_preview = build_issue_body_preview(body_text, Options::with_termwidth());
+    let title = pool.resolve_str(issue.title);
+    let author = pool.author_login(issue.author);
+    let created_at = pool.resolve_str(issue.created_at_full);
+
+    let title_line = if show_bookmark {
+        let bookmark_symbol = if bookmarked { " b " } else { "   " };
+        line![
+            span!(bookmark_symbol).style(if bookmarked {
+                Style::new().reversed()
+            } else {
+                Style::new()
+            }),
+            span!(title.to_string()),
+            " ",
+            span!("#{}", issue.number).dim(),
+        ]
+    } else {
+        line![
+            span!(title.to_string()),
+            " ",
+            span!("#{}", issue.number).dim(),
+        ]
+    };
+
+    let metadata_spacing = if show_bookmark { "  " } else { " " };
+    let body_indent = if show_bookmark { "   " } else { "" };
+
+    vec![
+        title_line,
+        line![
+            span!(symbols::shade::FULL).style({
+                if matches!(issue.state, IssueState::Open) {
+                    Style::new().green()
+                } else {
+                    Style::new().magenta()
+                }
+            }),
+            metadata_spacing,
+            span!(format!("Opened by {author} at {created_at}")).dim(),
+        ],
+        line![body_indent, span!(body_preview).style(Style::new().dim())],
+    ]
 }
 
 pub(crate) fn build_issue_body_preview(body_text: &str, options: Options<'_>) -> String {
@@ -1095,6 +1162,8 @@ impl Component for IssueList<'_> {
                             let issue = pool.get_issue(self.issues[selected].0);
                             IssueConversationSeed::from_ui_issue(issue, &pool)
                         };
+                        self.send_issue_list_preview_for_number(conversation_seed.number)
+                            .await?;
                         self.action_tx
                             .as_ref()
                             .ok_or_else(|| {
@@ -1317,12 +1386,23 @@ impl Component for IssueList<'_> {
                 let number = issue_number;
                 self.close_bookmark_popup();
 
-                if let Some(action_tx) = self.action_tx.as_ref() {
+                if let Some(action_tx) = self.action_tx.clone() {
                     action_tx
                         .send(Action::SelectedIssue { number, labels })
                         .await?;
                     action_tx
                         .send(Action::SelectedIssuePreview { seed: preview_seed })
+                        .await?;
+                    let issue_ids = {
+                        let pool = self.issue_pool.read().expect("issue pool lock poisoned");
+                        build_details_preview_issue_ids(&self.issues, &pool, number)
+                            .unwrap_or_else(|| vec![issue_id])
+                    };
+                    action_tx
+                        .send(Action::IssueListPreviewUpdated {
+                            issue_ids,
+                            selected_number: number,
+                        })
                         .await?;
                     action_tx
                         .send(Action::EnterIssueDetails {
@@ -1409,5 +1489,51 @@ impl HasFocus for IssueList<'_> {
         } else {
             Navigation::None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::testing::{DummyDataConfig, dummy_ui_data_with};
+
+    #[test]
+    fn preview_window_centers_on_selected_issue_when_available() {
+        let data = dummy_ui_data_with(DummyDataConfig {
+            issue_count: 7,
+            ..DummyDataConfig::default()
+        });
+        let issues = data
+            .issue_ids
+            .iter()
+            .copied()
+            .map(IssueListItem)
+            .collect::<Vec<_>>();
+
+        let selected_number = data.issue_numbers[3];
+        let issue_ids = build_details_preview_issue_ids(&issues, &data.pool, selected_number)
+            .expect("preview window should exist");
+        let numbers = issue_ids
+            .iter()
+            .map(|issue_id| data.pool.get_issue(*issue_id).number)
+            .collect::<Vec<_>>();
+
+        assert_eq!(numbers, data.issue_numbers[1..6].to_vec());
+    }
+
+    #[test]
+    fn preview_window_returns_none_for_missing_issue() {
+        let data = dummy_ui_data_with(DummyDataConfig {
+            issue_count: 3,
+            ..DummyDataConfig::default()
+        });
+        let issues = data
+            .issue_ids
+            .iter()
+            .copied()
+            .map(IssueListItem)
+            .collect::<Vec<_>>();
+
+        assert!(build_details_preview_issue_ids(&issues, &data.pool, 999_999).is_none());
     }
 }

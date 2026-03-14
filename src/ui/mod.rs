@@ -191,7 +191,7 @@ impl App {
         let issue_pool = Arc::new(RwLock::new(UiIssuePool::default()));
         let mut issue_conversation = IssueConversation::new(state.clone(), issue_pool.clone());
         let mut issue_create = IssueCreate::new(state.clone(), issue_pool.clone());
-        let mut issue_convo_preview = IssueConvoPreview::new();
+        let mut issue_convo_preview = IssueConvoPreview::new(issue_pool.clone());
         let bookmarks = Arc::new(RwLock::new(read_bookmarks()));
         let issue_handler = GITHUB_CLIENT
             .get()
@@ -670,6 +670,10 @@ pub enum Action {
         seed: IssueConversationSeed,
     },
     ChangeIssueBodyPreview(Arc<str>),
+    IssueListPreviewUpdated {
+        issue_ids: Vec<IssueId>,
+        selected_number: u64,
+    },
     IssueCommentsLoaded {
         number: u64,
         comments: Vec<CommentView>,

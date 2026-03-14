@@ -260,6 +260,12 @@ impl IssueCreate {
             .send(Action::SelectedIssuePreview { seed: preview_seed })
             .await;
         let _ = action_tx
+            .send(Action::IssueListPreviewUpdated {
+                issue_ids: vec![issue_id],
+                selected_number: number,
+            })
+            .await;
+        let _ = action_tx
             .send(Action::EnterIssueDetails {
                 seed: conversation_seed,
             })
